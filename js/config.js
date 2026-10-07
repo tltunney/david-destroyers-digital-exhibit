@@ -13,12 +13,13 @@
 //    x, z      center of the room
 //    w, d      width (x direction) and depth (z direction)
 //    height    ceiling height (default 5)
-//    floor     'concrete' | 'wood' | 'marble' | 'tile' | 'carpet'
+//    floor     'wood' (oak planks) | 'concrete' (polished)
 //    floorColor, wallColor, accent   any CSS color
 //    featureWall  one wall painted in the accent color: 'north' | 'south' | 'east' | 'west'
 //    woodWall  one wall covered in light wood slats: 'north' | 'south' | 'east' | 'west'
 //    ceiling   'wood' for a wood-slat ceiling (default is plain white)
 //    skylight  true to add a glowing skylight in the ceiling
+//    entrance  glass front doors with an EXIT sign on that wall, e.g. 'south'
 //    doors     { north|south|east|west: [{ at, width }] }
 //              `at` = how far the door is from the middle of that wall.
 //              You only need to put a door on ONE side; the room on the
@@ -36,7 +37,8 @@
 //              { type:'panel', wall:'east', at:-5, title, text, width, height }
 //    pedestal  3D object on a stand
 //              { type:'pedestal', x, z, shape:'bust'|'torusKnot'|'icosahedron'|'sphere'|'box'|'cone'|'torus',
-//                color, model:'assets/models/thing.glb', scale, spin, facing, spotlight, title, description }
+//                color, model:'assets/models/thing.glb', scale, spin, facing, spotlight, rope, title, description }
+//              `rope: true` puts brass posts and a velvet rope around it.
 //
 //  `description` can be one string or an array of paragraphs.
 //  Every painting, panel, and pedestal can be clicked (or press E) for details.
@@ -79,8 +81,8 @@ export const ROOMS = [
     id: 'lobby',
     name: 'Lobby',
     x: 0, z: 0, w: 16, d: 14,
-    floor: 'wood', floorColor: '#dcc29e', wallColor: '#f5f1ea', accent: '#a07a4c',
-    woodWall: 'north', ceiling: 'wood',
+    floor: 'wood', floorColor: '#c99f6e', wallColor: '#ebe5da', accent: '#a07a4c',
+    woodWall: 'north', ceiling: 'wood', entrance: 'south',
     doors: { north: [{ at: 0, width: 5 }] },
     exhibits: [
       { type: 'panel', wall: 'west', at: 0, width: 3.4, height: 2.2, title: 'What Trying Costs', text: PITCH },
@@ -106,7 +108,7 @@ export const ROOMS = [
     id: 'hall',
     name: 'Main Hall',
     x: 0, z: -19, w: 28, d: 24, height: 7, skylight: true,
-    floor: 'concrete', floorColor: '#dcd8d0', wallColor: '#f5f1ea', accent: '#c9a24a',
+    floor: 'concrete', floorColor: '#c4beb3', wallColor: '#ebe5da', accent: '#c9a24a',
     woodWall: 'north', ceiling: 'wood',
     doors: {
       west:  [{ at: 0, width: 4 }],
@@ -116,7 +118,7 @@ export const ROOMS = [
     exhibits: [
       {
         type: 'pedestal', x: 0, z: 0, shape: 'bust', color: '#f1eee8', scale: 1.5,
-        spin: false, facing: 'south', spotlight: true,
+        spin: false, facing: 'south', spotlight: true, rope: true,
         title: 'David Copperfield', subtitle: 'Narrator and hero of Charles Dickens\'s David Copperfield (1849–50)',
         description: 'Add your introduction to David here.',
       },
@@ -151,7 +153,7 @@ export const ROOMS = [
     id: 'price',
     name: 'Gallery 1: The Price Up Front',
     x: -24, z: -19, w: 20, d: 16,
-    floor: 'wood', floorColor: '#d9bf98', wallColor: '#f5f1ea', accent: '#2f6fde', featureWall: 'west', ceiling: 'wood',
+    floor: 'wood', floorColor: '#c29a6b', wallColor: '#ebe5da', accent: '#2f6fde', featureWall: 'west', ceiling: 'wood',
     exhibits: [
       {
         type: 'panel', wall: 'east', at: -5, width: 3.2, height: 2.2,
@@ -174,7 +176,7 @@ export const ROOMS = [
     id: 'ways',
     name: 'Gallery 2: Ways to Pay',
     x: 24, z: -19, w: 20, d: 16,
-    floor: 'wood', floorColor: '#d9bf98', wallColor: '#f5f1ea', accent: '#e4572e', featureWall: 'east', ceiling: 'wood',
+    floor: 'wood', floorColor: '#c29a6b', wallColor: '#ebe5da', accent: '#e4572e', featureWall: 'east', ceiling: 'wood',
     exhibits: [
       {
         type: 'panel', wall: 'west', at: -5, width: 3.2, height: 2.4,
@@ -198,7 +200,7 @@ export const ROOMS = [
     id: 'failure',
     name: 'Gallery 3: What Failure Takes',
     x: -7, z: -41, w: 14, d: 20,
-    floor: 'wood', floorColor: '#d9bf98', wallColor: '#f5f1ea', accent: '#1f9d6b', featureWall: 'north', ceiling: 'wood',
+    floor: 'wood', floorColor: '#c29a6b', wallColor: '#ebe5da', accent: '#1f9d6b', featureWall: 'north', ceiling: 'wood',
     exhibits: [
       {
         type: 'panel', wall: 'south', at: -4.5, width: 2.6, height: 2,
@@ -221,7 +223,7 @@ export const ROOMS = [
     id: 'weight',
     name: 'Gallery 4: Same Price, Different Weight',
     x: 7, z: -41, w: 14, d: 20,
-    floor: 'wood', floorColor: '#d9bf98', wallColor: '#f5f1ea', accent: '#7b5cf0', featureWall: 'north', ceiling: 'wood',
+    floor: 'wood', floorColor: '#c29a6b', wallColor: '#ebe5da', accent: '#7b5cf0', featureWall: 'north', ceiling: 'wood',
     exhibits: [
       {
         type: 'panel', wall: 'south', at: -4.5, width: 2.6, height: 2.2,

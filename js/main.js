@@ -2,6 +2,13 @@ import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { surfaceMaps, TILE_SIZE } from './textures.js';
 import { MUSEUM, ROOMS } from './config.js';
 import { AmbientMusic } from './music.js';
 
@@ -33,14 +40,16 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.AgXToneMapping;
-renderer.toneMappingExposure = 1.25;
+renderer.toneMappingExposure = 1.05;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.getElementById('app').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0e0e12);
 // soft "photo studio" light that bounces off everything, plus gentle reflections
 scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
-scene.environmentIntensity = 0.55;
+scene.environmentIntensity = 0.5;
 
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 200);
 camera.rotation.order = 'YXZ';
@@ -58,6 +67,7 @@ for (const room of ROOMS) {
   room.height ??= DEFAULT_HEIGHT;
   room.doors ??= {};
   for (const side of Object.keys(SIDES)) room.doors[side] ??= [];
+  room.footprints = []; // things standing on the floor, for the baked floor shadows
 }
 
 // ---------------------------------------------------------------- geometry helpers
@@ -73,6 +83,20 @@ function wallPoint(room, side, along, inset) {
   const s = SIDES[side];
   const inward = wallPlane(room, side) - s.sign * inset;
   return s.horizontal ? { x: room.x + along, z: inward } : { x: inward, z: room.z + along };
+}
+
+// The parts of a wall that are solid from the floor up (everything except the doorways), as [from, to] offsets.
+function solidRanges(room, side) {
+  const len = wallLength(room, side);
+  const ranges = [];
+  let cursor = -len / 2;
+  const openings = room.doors[side].map((door) => [door.at - door.width / 2, door.at + door.width / 2]).sort((p, q) => p[0] - q[0]);
+  for (const [a, b] of openings) {
+    if (a > cursor) ranges.push([cursor, a]);
+    cursor = b;
+  }
+  if (cursor < len / 2) ranges.push([cursor, len / 2]);
+  return ranges;
 }
 
 function addCollider(x, z, w, d) {
@@ -154,126 +178,205 @@ function wrapText(ctx, text, maxWidth) {
   return lines;
 }
 
-function floorTexture(style, color) {
-  const tex = canvasTexture(512, 512, (ctx, w, h) => {
-    const rand = seededRandom(style + color);
-    ctx.fillStyle = color;
-    ctx.fillRect(0, 0, w, h);
-    if (style === 'wood') {
-      const plank = h / 8;
-      for (let i = 0; i < 8; i++) {
-        ctx.fillStyle = shade(color, (rand() - 0.5) * 0.08);
-        ctx.fillRect(0, i * plank, w, plank);
-        ctx.fillStyle = 'rgba(0,0,0,0.25)';
-        ctx.fillRect(0, i * plank, w, 2);
-        ctx.fillRect(rand() * w, i * plank, 2, plank);
-        ctx.strokeStyle = 'rgba(0,0,0,0.06)';
-        for (let g = 0; g < 6; g++) {
-          const y = i * plank + rand() * plank;
-          ctx.beginPath();
-          ctx.moveTo(0, y);
-          ctx.bezierCurveTo(w / 3, y + 4, (2 * w) / 3, y - 4, w, y);
-          ctx.stroke();
-        }
-      }
-    } else if (style === 'tile') {
-      const n = 4;
-      const s = w / n;
-      for (let i = 0; i < n; i++)
-        for (let j = 0; j < n; j++) {
-          ctx.fillStyle = (i + j) % 2 ? shade(color, -0.12) : shade(color, 0.04);
-          ctx.fillRect(i * s, j * s, s, s);
-        }
-      ctx.strokeStyle = 'rgba(0,0,0,0.3)';
-      ctx.lineWidth = 3;
-      for (let i = 0; i <= n; i++) {
-        ctx.beginPath(); ctx.moveTo(i * s, 0); ctx.lineTo(i * s, h); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(0, i * s); ctx.lineTo(w, i * s); ctx.stroke();
-      }
-    } else if (style === 'concrete') {
-      // polished concrete: soft blotches + faint large slab seams
-      for (let i = 0; i < 260; i++) {
-        ctx.fillStyle = `rgba(${rand() > 0.5 ? '255,255,255' : '0,0,0'},${rand() * 0.035})`;
-        ctx.beginPath();
-        ctx.arc(rand() * w, rand() * h, 10 + rand() * 70, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.strokeStyle = 'rgba(0,0,0,0.12)';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(0, 0, w, h);
-    } else if (style === 'marble') {
-      ctx.lineWidth = 1.5;
-      for (let v = 0; v < 14; v++) {
-        ctx.strokeStyle = `rgba(90,90,100,${0.08 + rand() * 0.15})`;
-        ctx.beginPath();
-        let x = rand() * w, y = 0;
-        ctx.moveTo(x, y);
-        while (y < h) {
-          x += (rand() - 0.5) * 60;
-          y += 20 + rand() * 40;
-          ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-      }
-      ctx.strokeStyle = 'rgba(0,0,0,0.12)';
-      ctx.strokeRect(0, 0, w, h);
-    } else {
-      // carpet: fine noise
-      const img = ctx.getImageData(0, 0, w, h);
-      for (let i = 0; i < img.data.length; i += 4) {
-        const n = (rand() - 0.5) * 24;
-        img.data[i] += n; img.data[i + 1] += n; img.data[i + 2] += n;
-      }
-      ctx.putImageData(img, 0, 0);
-    }
-  });
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  return tex;
+// ---------------------------------------------------------------- baked soft shadows
+// Real rooms are darker where surfaces meet: along the base of walls, in corners, and under furniture.
+// That shading is painted once into small textures (ambient occlusion maps), so it costs nothing while walking.
+const AO_PPM = 24; // floor/ceiling shadow texture: pixels per meter
+
+// Paints only the blurred shadow of a shape (the shape itself is drawn far off the canvas).
+function softShadow(ctx, drawShape, blur, alpha) {
+  ctx.save();
+  ctx.shadowColor = `rgba(0,0,0,${alpha})`;
+  ctx.shadowBlur = blur;
+  ctx.shadowOffsetX = 10000;
+  ctx.translate(-10000, 0);
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  drawShape();
+  ctx.fill();
+  ctx.restore();
 }
 
-// Vertical wood slats with dark gaps, used for wood walls and ceilings.
-// One texture tile is about 1 m wide (8 slats).
-function slatTexture(color) {
-  const tex = canvasTexture(512, 512, (ctx, w, h) => {
-    const rand = seededRandom('slats' + color);
-    const n = 8;
-    const pitch = w / n;
-    ctx.fillStyle = shade(color, -0.32);
-    ctx.fillRect(0, 0, w, h);
-    for (let i = 0; i < n; i++) {
-      const x = i * pitch + pitch * 0.12;
-      const width = pitch * 0.76;
-      ctx.fillStyle = shade(color, (rand() - 0.5) * 0.08);
-      ctx.fillRect(x, 0, width, h);
-      ctx.strokeStyle = 'rgba(90,60,30,0.1)';
-      for (let g = 0; g < 5; g++) {
-        const gx = x + rand() * width;
-        ctx.beginPath();
-        ctx.moveTo(gx, 0);
-        ctx.bezierCurveTo(gx + 6, h / 3, gx - 6, (2 * h) / 3, gx, h);
-        ctx.stroke();
+function shadowBand(grad, strength = 1) {
+  grad.addColorStop(0, `rgba(0,0,0,${0.45 * strength})`);
+  grad.addColorStop(0.3, `rgba(0,0,0,${0.18 * strength})`);
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  return grad;
+}
+
+// Floor (or ceiling) shadow map: dark bands along the walls and soft shadows under objects.
+function roomAO(room, { doors = true, objects = true, strength = 1 } = {}) {
+  const { x, z, w, d } = room;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.ceil(w * AO_PPM);
+  canvas.height = Math.ceil(d * AO_PPM);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const px = (wx) => (wx - (x - w / 2)) * AO_PPM;
+  const pz = (wz) => (wz - (z - d / 2)) * AO_PPM;
+  const band = 0.6 * AO_PPM;
+  for (const side of Object.keys(SIDES)) {
+    const s = SIDES[side];
+    const len = wallLength(room, side);
+    const ranges = doors ? solidRanges(room, side) : [[-len / 2, len / 2]];
+    for (const [a, b] of ranges) {
+      const p0 = wallPoint(room, side, a, HALF_WALL);
+      const p1 = wallPoint(room, side, b, HALF_WALL);
+      const inward = -s.sign * band;
+      if (s.horizontal) {
+        const y0 = pz(p0.z);
+        ctx.fillStyle = shadowBand(ctx.createLinearGradient(0, y0, 0, y0 + inward), strength);
+        ctx.fillRect(px(p0.x), Math.min(y0, y0 + inward), px(p1.x) - px(p0.x), band);
+      } else {
+        const x0 = px(p0.x);
+        ctx.fillStyle = shadowBand(ctx.createLinearGradient(x0, 0, x0 + inward, 0), strength);
+        ctx.fillRect(Math.min(x0, x0 + inward), pz(p0.z), band, pz(p1.z) - pz(p0.z));
       }
-      ctx.fillStyle = 'rgba(255,255,255,0.14)';
-      ctx.fillRect(x, 0, 3, h);
-      ctx.fillStyle = 'rgba(0,0,0,0.14)';
-      ctx.fillRect(x + width - 3, 0, 3, h);
     }
-  });
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  return tex;
+  }
+  if (objects) {
+    for (const f of room.footprints) {
+      const shape = () => {
+        const cx = px(f.x);
+        const cy = pz(f.z);
+        const hw = (f.w / 2) * AO_PPM;
+        const hd = (f.d / 2) * AO_PPM;
+        if (f.round) ctx.ellipse(cx, cy, hw, hd, 0, 0, Math.PI * 2);
+        else ctx.rect(cx - hw, cy - hd, hw * 2, hd * 2);
+      };
+      softShadow(ctx, shape, 0.45 * AO_PPM, 0.4); // wide and soft
+      softShadow(ctx, shape, 0.08 * AO_PPM, 0.55); // tight contact shadow
+    }
+  }
+  return new THREE.CanvasTexture(canvas);
+}
+
+// Wall shadow map: darker toward the floor, the ceiling, and both corners.
+function wallAO(room, side) {
+  const len = wallLength(room, side);
+  const H = room.height;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.ceil(len * 16);
+  canvas.height = Math.ceil(H * 32);
+  const { width: cw, height: ch } = canvas;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, cw, ch);
+  const floorBand = 0.5 * 32;
+  const ceilBand = 0.6 * 32;
+  const cornerBand = 0.6 * 16;
+  ctx.fillStyle = shadowBand(ctx.createLinearGradient(0, ch, 0, ch - floorBand));
+  ctx.fillRect(0, ch - floorBand, cw, floorBand);
+  ctx.fillStyle = shadowBand(ctx.createLinearGradient(0, 0, 0, ceilBand), 0.8);
+  ctx.fillRect(0, 0, cw, ceilBand);
+  ctx.fillStyle = shadowBand(ctx.createLinearGradient(0, 0, cornerBand, 0), 0.8);
+  ctx.fillRect(0, 0, cornerBand, ch);
+  ctx.fillStyle = shadowBand(ctx.createLinearGradient(cw, 0, cw - cornerBand, 0), 0.8);
+  ctx.fillRect(cw - cornerBand, 0, cornerBand, ch);
+  return new THREE.CanvasTexture(canvas);
+}
+
+// ---------------------------------------------------------------- wall decals
+// A pool of warm light thrown onto the wall by a ceiling spotlight (brightest at the top, fading down).
+const WASH_TEX = canvasTexture(256, 512, (ctx, w, h) => {
+  ctx.translate(w / 2, h * 0.12);
+  ctx.scale(1, 2.4);
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, w * 0.5);
+  g.addColorStop(0, 'rgba(255,238,215,1)');
+  g.addColorStop(0.45, 'rgba(255,234,210,0.45)');
+  g.addColorStop(1, 'rgba(255,234,210,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(-w, -h, w * 2, h * 2);
+});
+
+// The soft shadow a frame or panel casts on the wall behind it.
+const SHADOW_INSET = 40 / 256;
+const SHADOW_TEX = canvasTexture(256, 256, (ctx, w, h) => {
+  const i = w * SHADOW_INSET;
+  softShadow(ctx, () => ctx.rect(i, i, w - 2 * i, h - 2 * i), 22, 0.95);
+});
+
+function decal(map, w, h, { additive = false, opacity = 1, layer = 1 } = {}) {
+  return new THREE.Mesh(
+    new THREE.PlaneGeometry(w, h),
+    new THREE.MeshBasicMaterial({
+      map, transparent: true, opacity, depthWrite: false,
+      blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+      polygonOffset: true, polygonOffsetFactor: -layer, polygonOffsetUnits: -layer,
+    }),
+  );
+}
+
+// Adds the wall shadow and spotlight wash behind something hanging on a wall (local coordinates of its group).
+function addWallLighting(group, w, h, washWidth = w + 1.8) {
+  const scale = 1 / (1 - 2 * SHADOW_INSET);
+  const shadow = decal(SHADOW_TEX, w * scale, h * scale, { opacity: 0.5, layer: 1 });
+  shadow.position.set(0, -0.05, 0.004);
+  const wash = decal(WASH_TEX, washWidth, h + 2.6, { additive: true, opacity: 0.42, layer: 2 });
+  wash.position.set(0, 0.35, 0.008);
+  group.add(shadow, wash);
+}
+
+// A ceiling track spotlight aimed at an exhibit on a wall.
+const SPOT_PARTS = {
+  can: new THREE.CylinderGeometry(0.065, 0.055, 0.22, 20).rotateX(Math.PI / 2),
+  lens: new THREE.CircleGeometry(0.048, 20),
+  stem: new THREE.CylinderGeometry(0.012, 0.012, 0.2, 8),
+};
+function addTrackSpot(room, side, along, targetY) {
+  const p = wallPoint(room, side, along, 1.3);
+  const target = wallPoint(room, side, along, HALF_WALL);
+  const group = new THREE.Group();
+  group.position.set(p.x, room.height - 0.28, p.z);
+  const stem = new THREE.Mesh(SPOT_PARTS.stem, MAT.metal);
+  stem.position.y = 0.12;
+  const pivot = new THREE.Group();
+  const can = new THREE.Mesh(SPOT_PARTS.can, MAT.metal);
+  const lens = new THREE.Mesh(SPOT_PARTS.lens, MAT.light);
+  lens.position.z = 0.111;
+  pivot.add(can, lens);
+  group.add(stem, pivot);
+  scene.add(group);
+  pivot.lookAt(target.x, targetY, target.z);
+}
+
+// One black track along each wall that has things hanging on it.
+function buildTracks(room) {
+  for (const side of Object.keys(SIDES)) {
+    const items = (room.exhibits ?? []).filter((ex) => ex.wall === side && (ex.type === 'painting' || ex.type === 'panel'));
+    if (!items.length) continue;
+    const len = wallLength(room, side);
+    const p = wallPoint(room, side, 0, 1.3);
+    const s = SIDES[side];
+    const [tw, td] = s.horizontal ? [len - 1.2, 0.05] : [0.05, len - 1.2];
+    addBox(tw, 0.04, td, MAT.metal, p.x, room.height - 0.06, p.z);
+    for (const ex of items) {
+      const h = ex.height ?? (ex.type === 'panel' ? 1.6 : 1.7);
+      addTrackSpot(room, side, ex.at ?? 0, (ex.y ?? (ex.type === 'panel' ? 1.9 : 2.2)) + h * 0.15);
+    }
+  }
+}
+
+// Beveled picture-frame moulding: a rectangle with a rectangular hole, extruded.
+function frameGeometry(outerW, outerH, innerW, innerH, depth) {
+  const shape = new THREE.Shape();
+  shape.moveTo(-outerW / 2, -outerH / 2);
+  shape.lineTo(outerW / 2, -outerH / 2);
+  shape.lineTo(outerW / 2, outerH / 2);
+  shape.lineTo(-outerW / 2, outerH / 2);
+  shape.closePath();
+  const hole = new THREE.Path();
+  hole.moveTo(-innerW / 2, -innerH / 2);
+  hole.lineTo(-innerW / 2, innerH / 2);
+  hole.lineTo(innerW / 2, innerH / 2);
+  hole.lineTo(innerW / 2, -innerH / 2);
+  hole.closePath();
+  shape.holes.push(hole);
+  return new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: true, bevelThickness: 0.012, bevelSize: 0.012, bevelSegments: 2 });
 }
 
 const WOOD_COLOR = '#d6b68d';
-const SLATS = slatTexture(WOOD_COLOR);
-
-// Slat material sized so slats keep the same width on every wall piece.
-function slatMaterial(width, height, glow = 0) {
-  const map = SLATS.clone();
-  map.repeat.set(width, height / 2.5);
-  return new THREE.MeshStandardMaterial({
-    map, roughness: 0.7, emissiveMap: glow ? map : null, emissive: glow ? 0xffffff : 0x000000, emissiveIntensity: glow,
-  });
-}
 
 function artTexture(title, accent) {
   return canvasTexture(512, 512, (ctx, w, h) => {
@@ -390,49 +493,53 @@ function loadImage(url, material) {
 
 // ---------------------------------------------------------------- shared materials
 const MAT = {
-  frame: new THREE.MeshStandardMaterial({ color: 0xc9a57a, roughness: 0.55 }),
-  oak: new THREE.MeshStandardMaterial({ color: 0xc19a6b, roughness: 0.6 }),
-  passepartout: new THREE.MeshStandardMaterial({ color: 0xfafafa, roughness: 0.9 }),
+  frame: new THREE.MeshStandardMaterial({ color: 0xb48a5c, roughness: 0.45 }),
+  oak: new THREE.MeshStandardMaterial({ color: 0xc19a6b, roughness: 0.55 }),
+  passepartout: new THREE.MeshStandardMaterial({ color: 0xf6f3ec, roughness: 0.95 }),
   trim: new THREE.MeshStandardMaterial({ color: 0x2f2a25, roughness: 0.6 }),
-  pedestal: new THREE.MeshStandardMaterial({ color: 0xfbfbfb, roughness: 0.35 }),
-  bench: new THREE.MeshStandardMaterial({ color: 0xc9a77c, roughness: 0.55 }),
-  metal: new THREE.MeshStandardMaterial({ color: 0x1c1c1c, roughness: 0.25, metalness: 0.9 }),
-  pot: new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.4 }),
-  leaf: new THREE.MeshStandardMaterial({ color: 0x3f8f4a, roughness: 0.8 }),
-  marble: new THREE.MeshStandardMaterial({ color: 0xf1eee8, roughness: 0.3 }),
-  light: new THREE.MeshBasicMaterial({ color: 0xffffff }),
-  sky: new THREE.MeshBasicMaterial({ color: 0xdff0ff }),
-  ceiling: new THREE.MeshStandardMaterial({ color: 0xfbf8f2, emissive: 0x6a6660, roughness: 1 }),
+  pedestal: new THREE.MeshStandardMaterial({ ...surfaceMaps('plaster', '#f4f2ed', 0.5, 0.5), roughness: 1 }),
+  metal: new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.35, metalness: 0.85 }),
+  brass: new THREE.MeshStandardMaterial({ color: 0xc9a35a, roughness: 0.28, metalness: 1 }),
+  velvet: new THREE.MeshStandardMaterial({ color: 0x5c0f16, roughness: 0.85 }),
+  leather: new THREE.MeshStandardMaterial({ ...surfaceMaps('leather', '#3a2a20', 4.8, 1.2), roughness: 1 }),
+  planter: new THREE.MeshStandardMaterial({ ...surfaceMaps('concrete', '#8d8a84', 0.5, 0.5), roughness: 1 }),
+  leaf: new THREE.MeshStandardMaterial({ color: 0x3d7a3f, roughness: 0.75 }),
+  leafDark: new THREE.MeshStandardMaterial({ color: 0x2c5e33, roughness: 0.75 }),
+  glass: new THREE.MeshStandardMaterial({ color: 0xdfe8ee, roughness: 0.04, metalness: 0.9, transparent: true, opacity: 0.25 }),
+  // brighter than white so the light strips glow (and bloom) after tone mapping
+  light: new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 2.85, 2.6) }),
+  sky: new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 1.8, 2.1) }),
 };
 
 // ---------------------------------------------------------------- room builders
 function buildRoom(room) {
   const { x, z, w, d, height } = room;
-  const wallMat = new THREE.MeshStandardMaterial({ color: room.wallColor ?? '#f4f4f1', roughness: 0.92 });
-  const featureMat = new THREE.MeshStandardMaterial({ color: room.accent ?? '#888', roughness: 0.92 });
-  const wallMaterialFor = (side) => (side === room.woodWall ? 'wood' : side === room.featureWall ? featureMat : wallMat);
 
-  // floor
-  const tex = floorTexture(room.floor ?? 'wood', room.floorColor ?? '#888');
-  tex.repeat.set(w / 6, d / 6);
-  const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(w, d),
-    new THREE.MeshStandardMaterial({ map: tex, roughness: { marble: 0.2, concrete: 0.3, tile: 0.35 }[room.floor] ?? 0.6 }),
-  );
+  // floor: wood planks or polished concrete, with real grain, seams and shine
+  const floorKind = room.floor === 'concrete' ? 'concrete' : 'wood';
+  const [ftx, fty] = TILE_SIZE[floorKind];
+  const floorMat = new THREE.MeshStandardMaterial({ ...surfaceMaps(floorKind, room.floorColor ?? '#c9a882', w / ftx, d / fty), roughness: 1 });
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(w, d), floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(x, 0, z);
+  floor.receiveShadow = true;
   scene.add(floor);
 
-  // ceiling
-  const ceilingMat = room.ceiling === 'wood' ? slatMaterial(w, d * 2.5, 0.5) : MAT.ceiling;
-  const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(w, d), ceilingMat);
+  // ceiling: wood slats or plain plaster
+  const ceilingMaps = room.ceiling === 'wood' ? surfaceMaps('slats', WOOD_COLOR, w, d / TILE_SIZE.slats[1]) : surfaceMaps('plaster', '#f7f4ee', w / 2, d / 2);
+  const ceiling = new THREE.Mesh(
+    new THREE.PlaneGeometry(w, d),
+    new THREE.MeshStandardMaterial({ ...ceilingMaps, roughness: 1, aoMap: roomAO(room, { doors: false, objects: false, strength: 0.8 }) }),
+  );
   ceiling.rotation.x = Math.PI / 2;
   ceiling.position.set(x, height, z);
   scene.add(ceiling);
 
   // walls (with door openings), baseboards, door trim and signs
-  for (const side of Object.keys(SIDES)) buildWall(room, side, wallMaterialFor(side));
+  for (const side of Object.keys(SIDES)) buildWall(room, side);
   buildCeilingLights(room);
+  buildTracks(room);
+  if (room.entrance) buildEntrance(room, room.entrance);
 
   for (const ex of room.exhibits ?? []) {
     if (ex.type === 'painting') buildPainting(room, ex);
@@ -441,6 +548,10 @@ function buildRoom(room) {
     else console.warn(`Unknown exhibit type "${ex.type}" in room "${room.id}"`);
   }
   for (const item of room.decor ?? []) buildDecor(room, item);
+
+  // now that everything is placed, bake the soft floor shadows
+  floorMat.aoMap = roomAO(room);
+  floorMat.needsUpdate = true;
 }
 
 // Linear LED strips, a glowing cove around the edge, an optional skylight,
@@ -455,15 +566,15 @@ function buildCeilingLights(room) {
   for (let i = 0; i < strips; i++) {
     const off = -across / 2 + (across / strips) * (i + 0.5);
     if (room.skylight && Math.abs(off) < across * 0.3) continue;
-    if (longAlongX) addBox(span, 0.04, 0.12, MAT.light, x, y, z + off);
-    else addBox(0.12, 0.04, span, MAT.light, x + off, y, z);
+    if (longAlongX) addBox(span, 0.04, 0.1, MAT.light, x, y, z + off);
+    else addBox(0.1, 0.04, span, MAT.light, x + off, y, z);
   }
   // perimeter cove glow
   const inset = HALF_WALL + 0.25;
-  addBox(w - inset * 2, 0.05, 0.08, MAT.light, x, y, z - d / 2 + inset);
-  addBox(w - inset * 2, 0.05, 0.08, MAT.light, x, y, z + d / 2 - inset);
-  addBox(0.08, 0.05, d - inset * 2, MAT.light, x - w / 2 + inset, y, z);
-  addBox(0.08, 0.05, d - inset * 2, MAT.light, x + w / 2 - inset, y, z);
+  addBox(w - inset * 2, 0.05, 0.06, MAT.light, x, y, z - d / 2 + inset);
+  addBox(w - inset * 2, 0.05, 0.06, MAT.light, x, y, z + d / 2 - inset);
+  addBox(0.06, 0.05, d - inset * 2, MAT.light, x - w / 2 + inset, y, z);
+  addBox(0.06, 0.05, d - inset * 2, MAT.light, x + w / 2 - inset, y, z);
 
   if (room.skylight) {
     const sw = w * 0.45;
@@ -471,31 +582,40 @@ function buildCeilingLights(room) {
     addBox(sw, 0.02, sd, MAT.sky, x, height - 0.01, z);
     const n = 4;
     for (let i = 1; i < n; i++) {
-      addBox(0.08, 0.06, sd, MAT.metal, x - sw / 2 + (sw / n) * i, height - 0.03, z);
-      addBox(sw, 0.06, 0.08, MAT.metal, x, height - 0.03, z - sd / 2 + (sd / n) * i);
+      addBox(0.08, 0.1, sd, MAT.metal, x - sw / 2 + (sw / n) * i, height - 0.05, z);
+      addBox(sw, 0.1, 0.08, MAT.metal, x, height - 0.05, z - sd / 2 + (sd / n) * i);
     }
+    // deep reveal around the skylight opening
+    addBox(sw + 0.3, 0.3, 0.15, MAT.metal, x, height - 0.15, z - sd / 2);
+    addBox(sw + 0.3, 0.3, 0.15, MAT.metal, x, height - 0.15, z + sd / 2);
+    addBox(0.15, 0.3, sd, MAT.metal, x - sw / 2, height - 0.15, z);
+    addBox(0.15, 0.3, sd, MAT.metal, x + sw / 2, height - 0.15, z);
   }
 
   const count = Math.max(w, d) > 18 ? 2 : 1;
   for (let i = 0; i < count; i++) {
     const t = count === 1 ? 0 : (i === 0 ? -0.25 : 0.25);
-    const light = new THREE.PointLight(0xffecd6, ROOM_LIGHT * (height / DEFAULT_HEIGHT), Math.max(w, d), 1);
+    const light = new THREE.PointLight(0xffe6c8, ROOM_LIGHT * (height / DEFAULT_HEIGHT), Math.max(w, d), 1);
     light.position.set(x + (longAlongX ? w * t : 0), height - 0.8, z + (longAlongX ? 0 : d * t));
     scene.add(light);
   }
 }
 
-function buildWall(room, side, wallMat) {
+function buildWall(room, side) {
   const s = SIDES[side];
   const len = wallLength(room, side);
   const H = room.height;
-  const openings = room.doors[side]
-    .map((door) => [door.at - door.width / 2, door.at + door.width / 2])
-    .sort((p, q) => p[0] - q[0]);
+  const wood = side === room.woodWall;
+  const kind = wood ? 'slats' : 'plaster';
+  const color = wood ? WOOD_COLOR : side === room.featureWall ? room.accent ?? '#888' : room.wallColor ?? '#f4f0e8';
+  const ao = wallAO(room, side);
+  // on the south and west walls the box face's texture runs backwards, so mirror the shadow map
+  const mirrored = side === 'south' || side === 'west';
 
   // split the wall into solid pieces + lintels above each door
   const segments = [];
   let cursor = -len / 2;
+  const openings = room.doors[side].map((door) => [door.at - door.width / 2, door.at + door.width / 2]).sort((p, q) => p[0] - q[0]);
   for (const [a, b] of openings) {
     if (a > cursor) segments.push([cursor, a, 0]);
     segments.push([a, b, DOOR_HEIGHT]);
@@ -509,14 +629,20 @@ function buildWall(room, side, wallMat) {
     const h = H - bottom;
     const p = wallPoint(room, side, mid, HALF_WALL / 2);
     const [bw, bd] = s.horizontal ? [length, HALF_WALL] : [HALF_WALL, length];
-    const material = wallMat === 'wood' ? slatMaterial(length, h) : wallMat;
+    const [tx, ty] = TILE_SIZE[kind];
+    const segAO = ao.clone();
+    segAO.repeat.set(((mirrored ? -1 : 1) * length) / len, h / H);
+    segAO.offset.set((mirrored ? b : a) / len + 0.5, bottom / H);
+    const material = new THREE.MeshStandardMaterial({ ...surfaceMaps(kind, color, length / tx, h / ty), roughness: 1, aoMap: segAO });
     const wall = addBox(bw, h, bd, material, p.x, bottom + h / 2, p.z, bottom === 0);
+    wall.receiveShadow = true;
     blockers.push(wall);
 
-    if (bottom === 0 && wallMat !== 'wood') {
-      const bp = wallPoint(room, side, mid, HALF_WALL + 0.02);
-      const [tw, td] = s.horizontal ? [length, 0.04] : [0.04, length];
-      addBox(tw, 0.14, td, MAT.oak, bp.x, 0.07, bp.z);
+    if (bottom === 0 && !wood) {
+      // recessed shadow-gap baseboard, oak
+      const bp = wallPoint(room, side, mid, HALF_WALL + 0.015);
+      const [tw, td] = s.horizontal ? [length, 0.03] : [0.03, length];
+      addBox(tw, 0.12, td, MAT.oak, bp.x, 0.07, bp.z);
     }
   }
 
@@ -547,6 +673,72 @@ function buildWall(room, side, wallMat) {
   }
 }
 
+// Glass entrance doors with daylight outside and an EXIT sign above, centered on a wall.
+function buildEntrance(room, side) {
+  const group = new THREE.Group();
+  const W = 3.4;
+  const H = 3;
+  const outside = canvasTexture(512, 512, (ctx, w, h) => {
+    const sky = ctx.createLinearGradient(0, 0, 0, h);
+    sky.addColorStop(0, '#cfe3f5');
+    sky.addColorStop(0.55, '#eef4f6');
+    sky.addColorStop(0.62, '#9fb08f');
+    sky.addColorStop(1, '#b9b3a6');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, w, h);
+    ctx.filter = 'blur(6px)';
+    const r = seededRandom('trees');
+    for (let i = 0; i < 18; i++) {
+      ctx.fillStyle = `rgba(${70 + r() * 40},${105 + r() * 40},${70 + r() * 30},0.85)`;
+      ctx.beginPath();
+      ctx.arc(r() * w, h * 0.55 + r() * 30, 30 + r() * 60, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+  const view = new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshBasicMaterial({ map: outside, color: new THREE.Color(1.5, 1.5, 1.5) }));
+  view.position.set(0, H / 2, 0.01);
+  const glass = new THREE.Mesh(new THREE.PlaneGeometry(W, H), MAT.glass);
+  glass.position.set(0, H / 2, 0.04);
+  group.add(view, glass);
+  // frame and mullions
+  const bar = (bw, bh, bx, by) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, 0.08), MAT.metal);
+    m.position.set(bx, by, 0.04);
+    group.add(m);
+  };
+  bar(W + 0.2, 0.12, 0, H + 0.06);
+  bar(0.1, H, -W / 2 - 0.05, H / 2);
+  bar(0.1, H, W / 2 + 0.05, H / 2);
+  bar(0.08, H, 0, H / 2);
+  for (const hx of [-0.18, 0.18]) {
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 1.1, 12), MAT.brass);
+    handle.position.set(hx, 1.1, 0.12);
+    group.add(handle);
+  }
+  // EXIT sign
+  const exitTex = canvasTexture(256, 96, (ctx, w, h) => {
+    ctx.fillStyle = '#0b8a3e';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#f2fff4';
+    ctx.font = `bold 64px ${FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('EXIT', w / 2, h / 2 + 3);
+  });
+  const exit = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.26, 0.06), [MAT.trim, MAT.trim, MAT.trim, MAT.trim, new THREE.MeshBasicMaterial({ map: exitTex, color: new THREE.Color(1.6, 1.6, 1.6) }), MAT.trim]);
+  exit.position.set(0, H + 0.45, 0.04);
+  group.add(exit);
+  mountOnWall(room, { wall: side, at: 0 }, group, 0);
+
+  // daylight spilling onto the floor
+  const spill = decal(WASH_TEX, W + 1.5, 4, { additive: true, opacity: 0.35 });
+  spill.rotation.x = -Math.PI / 2;
+  const p = wallPoint(room, side, 0, HALF_WALL + 2);
+  spill.position.set(p.x, 0.005, p.z);
+  spill.rotation.z = SIDES[side].rotY + Math.PI;
+  scene.add(spill);
+}
+
 function mountOnWall(room, ex, object, y) {
   const p = wallPoint(room, ex.wall, ex.at ?? 0, HALF_WALL);
   object.position.set(p.x, y, p.z);
@@ -568,22 +760,24 @@ function buildPainting(room, ex) {
   const y = ex.y ?? 2.2;
   const group = new THREE.Group();
 
-  // thin black frame with a white mat, gallery style
-  const frame = new THREE.Mesh(new THREE.BoxGeometry(w + 0.42, h + 0.42, 0.05), MAT.frame);
-  frame.position.z = 0.025;
-  const mat = new THREE.Mesh(new THREE.PlaneGeometry(w + 0.34, h + 0.34), MAT.passepartout);
-  mat.position.z = 0.052;
+  // beveled oak frame around a white mat, gallery style
+  const frame = new THREE.Mesh(frameGeometry(w + 0.4, h + 0.4, w + 0.28, h + 0.28, 0.035), MAT.frame);
+  frame.position.z = 0.012;
+  frame.castShadow = true;
+  const mat = new THREE.Mesh(new THREE.PlaneGeometry(w + 0.3, h + 0.3), MAT.passepartout);
+  mat.position.z = 0.03;
   const artMat = displayMaterial(ex.title || ex.image ? artTexture(ex.title || 'untitled', room.accent ?? '#888') : emptySlotTexture());
   if (ex.image) loadImage(ex.image, artMat);
   const art = new THREE.Mesh(new THREE.PlaneGeometry(w, h), artMat);
-  art.position.z = 0.055;
+  art.position.z = 0.034;
 
   const label = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.28), displayMaterial(labelTexture(ex.title ?? '', ex.subtitle)));
-  label.position.set(w / 2 + 0.75, -h / 2 + 0.14, 0.02);
-  if (w / 2 + 1.1 > 3) label.position.set(0, -h / 2 - 0.35, 0.02); // big paintings: label underneath
+  label.position.set(w / 2 + 0.75, -h / 2 + 0.14, 0.012);
+  if (w / 2 + 1.1 > 3) label.position.set(0, -h / 2 - 0.4, 0.012); // big paintings: label underneath
 
   group.add(frame, mat, art);
   if (ex.title) group.add(label);
+  addWallLighting(group, w + 0.4, h + 0.4);
   mountOnWall(room, ex, group, y);
   makeInteractive([frame, mat, art, label], ex, room);
 }
@@ -591,19 +785,22 @@ function buildPainting(room, ex) {
 function buildPanel(room, ex) {
   const w = ex.width ?? 2.4;
   const h = ex.height ?? 1.6;
+  const group = new THREE.Group();
   const panel = new THREE.Mesh(
-    new THREE.BoxGeometry(w, h, 0.06),
+    new THREE.BoxGeometry(w, h, 0.05),
     [MAT.trim, MAT.trim, MAT.trim, MAT.trim, displayMaterial(textPanelTexture(ex.title ?? '', ex.text, w, w / h, room.accent ?? '#d9a441')), MAT.trim],
   );
-  panel.geometry.translate(0, 0, 0.03);
-  mountOnWall(room, ex, panel, ex.y ?? 1.9);
+  panel.position.z = 0.035; // stands off the wall on hidden spacers
+  group.add(panel);
+  addWallLighting(group, w, h, w + 1);
+  mountOnWall(room, ex, group, ex.y ?? 1.9);
   makeInteractive([panel], { ...ex, description: ex.description ?? ex.text }, room);
 }
 
 // A marble portrait bust built from simple shapes, about 1 unit tall, centered on y = 0.
 // For a real likeness, export a scanned/sculpted .glb and use `model` instead.
 function makeBust(color) {
-  const marble = new THREE.MeshStandardMaterial({ color: color ?? '#f1eee8', roughness: 0.32 });
+  const marble = new THREE.MeshStandardMaterial({ ...surfaceMaps('marble', color ?? '#f1eee8'), roughness: 1 });
   const hairMat = marble.clone();
   hairMat.side = THREE.DoubleSide;
   const bust = new THREE.Group();
@@ -612,6 +809,8 @@ function makeBust(color) {
     m.position.set(x, y, z);
     m.scale.set(sx, sy, sz);
     m.rotation.x = rotX;
+    m.castShadow = true;
+    m.receiveShadow = true;
     bust.add(m);
     return m;
   };
@@ -676,6 +875,9 @@ function buildPedestal(room, ex) {
 
   const base = addBox(baseW, baseH, baseW, MAT.pedestal, px, baseH / 2, pz, true);
   const cap = addBox(baseW + 0.1, 0.06, baseW + 0.1, MAT.oak, px, baseH + 0.03, pz);
+  base.castShadow = base.receiveShadow = cap.castShadow = cap.receiveShadow = true;
+  room.footprints.push({ x: px, z: pz, w: baseW, d: baseW });
+  if (ex.rope) buildRopeBarrier(room, px, pz, baseW + 1.6);
   const holder = new THREE.Group();
   holder.position.set(px, baseH + 0.06 + 0.5 * scale, pz);
   scene.add(holder);
@@ -716,11 +918,50 @@ function buildPedestal(room, ex) {
   holder.rotation.y = (FACING[ex.facing ?? 'south'] ?? 0) + Math.PI;
 
   if (ex.spotlight) {
-    const spot = new THREE.SpotLight(0xffffff, 45, 14, 0.35, 0.6, 1);
+    const spot = new THREE.SpotLight(0xfff3e2, 45, 14, 0.35, 0.6, 1);
     spot.position.set(px, room.height - 0.3, pz + 3);
     spot.target = holder;
+    spot.castShadow = true;
+    spot.shadow.mapSize.set(1024, 1024);
+    spot.shadow.bias = -0.0004;
+    spot.shadow.normalBias = 0.02;
+    spot.shadow.camera.near = 1;
+    spot.shadow.camera.far = 15;
     scene.add(spot);
   }
+}
+
+// Brass posts with a sagging velvet rope, in a square around an object.
+function buildRopeBarrier(room, cx, cz, size) {
+  const h = 0.95;
+  const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sz]) => new THREE.Vector3(cx + (sx * size) / 2, h - 0.05, cz + (sz * size) / 2));
+  const baseGeo = new THREE.CylinderGeometry(0.15, 0.17, 0.035, 32);
+  const poleGeo = new THREE.CylinderGeometry(0.022, 0.026, h, 16);
+  const topGeo = new THREE.SphereGeometry(0.045, 20, 12);
+  for (const c of corners) {
+    const base = new THREE.Mesh(baseGeo, MAT.brass);
+    base.position.set(c.x, 0.018, c.z);
+    const pole = new THREE.Mesh(poleGeo, MAT.brass);
+    pole.position.set(c.x, h / 2, c.z);
+    const top = new THREE.Mesh(topGeo, MAT.brass);
+    top.position.set(c.x, h + 0.02, c.z);
+    for (const m of [base, pole, top]) {
+      m.castShadow = true;
+      scene.add(m);
+    }
+    room.footprints.push({ x: c.x, z: c.z, w: 0.34, d: 0.34, round: true });
+  }
+  for (let i = 0; i < 4; i++) {
+    const a = corners[i];
+    const b = corners[(i + 1) % 4];
+    const mid = a.clone().lerp(b, 0.5);
+    mid.y -= 0.22;
+    const curve = new THREE.CatmullRomCurve3([a, a.clone().lerp(mid, 0.5).setY(a.y - 0.15), mid, b.clone().lerp(mid, 0.5).setY(b.y - 0.15), b]);
+    const rope = new THREE.Mesh(new THREE.TubeGeometry(curve, 32, 0.022, 10), MAT.velvet);
+    rope.castShadow = true;
+    scene.add(rope);
+  }
+  addCollider(cx, cz, size + 0.3, size + 0.3);
 }
 
 function buildDecor(room, item) {
@@ -731,48 +972,61 @@ function buildDecor(room, item) {
   group.position.set(x, 0, z);
   group.rotation.y = rot;
   let size = [1, 1];
+  let round = false;
 
   if (item.type === 'bench') {
-    size = [2.4, 0.6];
-    const seat = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.1, 0.6), MAT.bench);
-    seat.position.y = 0.45;
-    group.add(seat);
-    for (const lx of [-1, 1]) {
-      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.4, 0.5), MAT.metal);
-      leg.position.set(lx, 0.2, 0);
-      group.add(leg);
-    }
+    // museum bench: tufted leather cushion on a recessed oak base
+    size = [2.4, 0.62];
+    const cushion = new THREE.Mesh(new RoundedBoxGeometry(2.4, 0.14, 0.62, 4, 0.05), MAT.leather);
+    cushion.position.y = 0.44;
+    const base = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.37, 0.42), MAT.oak);
+    base.position.y = 0.185;
+    group.add(cushion, base);
   } else if (item.type === 'plant') {
-    size = [0.8, 0.8];
-    const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.22, 0.6, 20), MAT.pot);
-    pot.position.y = 0.3;
-    const leaves = new THREE.Mesh(new THREE.IcosahedronGeometry(0.5, 1), MAT.leaf);
-    leaves.position.y = 1.05;
-    leaves.scale.set(1, 1.3, 1);
-    group.add(pot, leaves);
+    // tall concrete planter with a leafy shrub
+    size = [0.7, 0.7];
+    round = true;
+    const planter = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.26, 0.75, 32), MAT.planter);
+    planter.position.y = 0.375;
+    group.add(planter);
+    const r = seededRandom(`plant${x},${z}`);
+    for (let i = 0; i < 14; i++) {
+      const leaf = new THREE.Mesh(new THREE.IcosahedronGeometry(0.22 + r() * 0.12, 1), r() > 0.5 ? MAT.leaf : MAT.leafDark);
+      const a = r() * Math.PI * 2;
+      const rr = r() * 0.28;
+      leaf.position.set(Math.cos(a) * rr, 0.95 + r() * 0.75, Math.sin(a) * rr);
+      leaf.scale.set(1, 0.8 + r() * 0.5, 1);
+      group.add(leaf);
+    }
   } else if (item.type === 'desk') {
     size = [3.2, 1];
-    const desk = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.05, 1), MAT.bench);
+    const desk = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.05, 1), MAT.oak);
     desk.position.y = 0.525;
-    const top = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.06, 1.15), MAT.pedestal);
+    const top = new THREE.Mesh(new RoundedBoxGeometry(3.4, 0.06, 1.15, 2, 0.02), MAT.pedestal);
     top.position.y = 1.08;
     group.add(desk, top);
   } else {
     console.warn(`Unknown decor type "${item.type}"`);
     return;
   }
+  group.traverse((m) => {
+    if (m.isMesh) m.castShadow = m.receiveShadow = true;
+  });
   scene.add(group);
 
   // axis-aligned collision box that covers the rotated footprint
   const c = Math.abs(Math.cos(rot));
   const s = Math.abs(Math.sin(rot));
-  addCollider(x, z, size[0] * c + size[1] * s, size[0] * s + size[1] * c);
+  const fw = size[0] * c + size[1] * s;
+  const fd = size[0] * s + size[1] * c;
+  addCollider(x, z, fw, fd);
+  room.footprints.push({ x, z, w: fw, d: fd, round });
 }
 
 // ---------------------------------------------------------------- build everything
 linkDoors();
 ROOMS.forEach(buildRoom);
-scene.add(new THREE.HemisphereLight(0xfff8ee, 0x3a3530, 0.9));
+scene.add(new THREE.HemisphereLight(0xfff6ea, 0x4a3f35, 0.6));
 
 // ---------------------------------------------------------------- player
 const spawnRoom = ROOMS[0];
@@ -854,6 +1108,7 @@ const ui = {
   enterTouch: $('enter-touch-btn'),
   musicBtn: $('music-btn'),
   musicHud: $('music-hud'),
+  qualityBtn: $('quality-btn'),
   joystick: $('joystick'),
   knob: $('joystick-knob'),
 };
@@ -881,6 +1136,39 @@ document.addEventListener('visibilitychange', () => music.setVisible(!document.h
 
 // ---- start / pause screen
 const prefersTouch = window.matchMedia('(pointer: coarse)').matches;
+
+// ---- graphics quality: "high" adds soft contact shadows (GTAO) and glow (bloom) as a post-process
+let quality = prefersTouch ? 'standard' : 'high';
+try {
+  quality = localStorage.getItem('museum-quality') ?? quality;
+} catch {}
+let composer = null;
+
+function setupComposer() {
+  const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+  composer = new EffectComposer(renderer, target);
+  composer.addPass(new RenderPass(scene, camera));
+  const gtao = new GTAOPass(scene, camera, window.innerWidth, window.innerHeight);
+  gtao.updateGtaoMaterial({ radius: 0.6, distanceExponent: 1.5, thickness: 1.5, scale: 1.2, samples: 16 });
+  gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 });
+  gtao.blendIntensity = 0.85;
+  composer.addPass(gtao);
+  composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.18, 0.4, 2.2));
+  composer.addPass(new OutputPass());
+  composer.setPixelRatio(renderer.getPixelRatio());
+  composer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function setQuality(q) {
+  quality = q;
+  try {
+    localStorage.setItem('museum-quality', q);
+  } catch {}
+  if (q === 'high' && !composer) setupComposer();
+  ui.qualityBtn.textContent = q === 'high' ? 'Graphics: high' : 'Graphics: standard (faster)';
+}
+setQuality(quality);
+ui.qualityBtn.addEventListener('click', () => setQuality(quality === 'high' ? 'standard' : 'high'));
 if (prefersTouch) {
   ui.enter.classList.remove('primary');
   ui.enterTouch.classList.add('primary');
@@ -907,6 +1195,8 @@ ui.enterTouch.addEventListener('click', () => {
   touchPlaying = true;
   document.body.classList.add('touch');
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // easier on phone GPUs
+  composer?.setPixelRatio(renderer.getPixelRatio());
+  composer?.setSize(window.innerWidth, window.innerHeight);
   music.start();
   ui.overlay.classList.add('hidden');
   // hide the browser bars where possible (Android, iPad); harmless where unsupported
@@ -1149,6 +1439,7 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  composer?.setSize(window.innerWidth, window.innerHeight);
 });
 
 const clock = new THREE.Clock();
@@ -1159,7 +1450,8 @@ renderer.setAnimationLoop(() => {
   updateFocus();
   updateRoomLabel();
   drawMinimap();
-  renderer.render(scene, camera);
+  if (quality === 'high' && composer) composer.render(dt);
+  else renderer.render(scene, camera);
 });
 
 // handy for debugging in the browser console: museum.teleport('legacy')

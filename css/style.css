@@ -19,6 +19,14 @@ html, body {
 
 #app canvas { display: block; }
 
+/* soft darkening toward the screen edges, like a camera lens */
+#vignette {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(10, 8, 6, 0.38) 100%);
+  pointer-events: none;
+}
+
 .hidden { display: none !important; }
 
 kbd {
@@ -145,8 +153,14 @@ kbd {
 }
 .enter-buttons button:hover { filter: brightness(1.15); }
 
-.text-btn {
+.settings {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 20px;
   margin-top: 14px;
+}
+.text-btn {
   border: none;
   background: none;
   color: var(--muted);
