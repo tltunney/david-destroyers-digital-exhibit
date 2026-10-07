@@ -51,6 +51,9 @@ export const MUSEUM = {
   subtitle: 'Debt, cushion, and the price of a chance in Dickens\'s David Copperfield and today',
   credits: 'A digital exhibit by the David Destroyers',
   spawn: { x: 0, z: 5, facing: 'north' },
+  // Ambient music is generated in the browser. To use your own royalty-free track instead,
+  // put it in assets/audio/ and set file: 'assets/audio/your-track.mp3'.
+  music: { enabled: true, volume: 0.3, file: '' },
 };
 
 // Full thesis, shown in the Main Hall.
