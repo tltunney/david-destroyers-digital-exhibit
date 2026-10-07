@@ -121,18 +121,51 @@ kbd {
 
 #museum-subtitle { margin: 0 0 24px; color: var(--muted); }
 
-#enter-btn {
-  padding: 12px 28px;
-  border: none;
+.enter-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+.enter-buttons button {
+  padding: 12px 24px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 999px;
-  background: var(--accent);
-  color: #111;
+  background: transparent;
+  color: var(--text);
   font: inherit;
-  font-size: 1.05rem;
+  font-size: 1rem;
   font-weight: bold;
   cursor: pointer;
 }
-#enter-btn:hover { filter: brightness(1.1); }
+.enter-buttons button.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #111;
+}
+.enter-buttons button:hover { filter: brightness(1.15); }
+
+.text-btn {
+  margin-top: 14px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.text-btn:hover { color: var(--text); }
+
+#overlay h3 {
+  margin: 22px 0 0;
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-align: left;
+  text-transform: uppercase;
+}
+#overlay h3 + .controls { margin-top: 10px; }
 
 .controls {
   display: grid;
@@ -177,3 +210,61 @@ kbd {
 #info-link { display: inline-block; margin-top: 8px; color: #c9a24a; }
 #info-link:empty { display: none; }
 .hint { margin: 20px 0 0; font-size: 0.8rem; color: var(--muted); }
+
+/* ---------- Phone / tablet mode ---------- */
+#app canvas { touch-action: none; }
+.card { touch-action: pan-y; }
+
+#hud-buttons, #joystick, .touch-only { display: none; }
+body.touch .touch-only { display: inline; }
+body.touch .desktop-only { display: none; }
+body.touch #hud-buttons, body.touch #joystick { display: flex; }
+
+#hud-buttons {
+  position: fixed;
+  top: max(12px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  gap: 8px;
+}
+.hud-btn {
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.hud-btn.off { opacity: 0.45; }
+
+#joystick {
+  position: fixed;
+  left: max(28px, env(safe-area-inset-left));
+  bottom: max(28px, env(safe-area-inset-bottom));
+  width: 130px;
+  height: 130px;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.25);
+  touch-action: none;
+}
+#joystick-knob {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.8);
+  pointer-events: none;
+}
+
+/* the "Tap to view" prompt is a button in touch mode */
+body.touch #prompt { pointer-events: auto; cursor: pointer; bottom: 22%; }
+
+@media (max-width: 700px), (max-height: 500px) {
+  .card { padding: 20px; }
+  #minimap { width: 110px; height: 110px; }
+  #room-label { font-size: 0.9rem; }
+}

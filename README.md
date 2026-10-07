@@ -45,7 +45,14 @@ Three.js is included in `lib/three/`, so the museum works with no internet conne
 | E or click | Open the exhibit you're looking at |
 | 1–6 | Jump to a room (numbers match the minimap) |
 | M | Show or hide the minimap |
+| N | Music on/off |
 | Esc | Pause |
+
+**Phone or tablet:** tap **Enter on phone / tablet**. Use the left thumb stick to walk, drag anywhere else to look,
+and tap an exhibit to open it. Buttons in the top-right corner toggle music and the map and open the menu.
+
+**Music:** soft ambient music is generated live in the browser, so there are no audio files or licenses to worry about.
+To play your own royalty-free track instead, set `music.file` in `js/config.js`.
 
 ## Adding your content
 

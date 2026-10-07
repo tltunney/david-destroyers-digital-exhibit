@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>David Destroyers Digital Exhibit</title>
   <link rel="icon" href="data:," />
   <link rel="stylesheet" href="css/style.css" />
@@ -24,20 +24,40 @@
   <div id="prompt" class="hidden"></div>
   <canvas id="minimap" width="220" height="220"></canvas>
 
+  <!-- Touch controls (phone / tablet mode only) -->
+  <div id="hud-buttons">
+    <button id="music-hud" class="hud-btn" aria-label="Toggle music">&#9835;</button>
+    <button id="map-hud" class="hud-btn" aria-label="Toggle map">&#9638;</button>
+    <button id="menu-hud" class="hud-btn" aria-label="Pause menu">&#9776;</button>
+  </div>
+  <div id="joystick"><div id="joystick-knob"></div></div>
+
   <!-- Start / pause screen -->
   <div id="overlay">
     <div class="card">
       <h1 id="museum-title"></h1>
       <p id="museum-subtitle"></p>
-      <button id="enter-btn">Click to enter</button>
+      <div class="enter-buttons">
+        <button id="enter-btn" class="primary">Enter with mouse &amp; keyboard</button>
+        <button id="enter-touch-btn">Enter on phone / tablet</button>
+      </div>
+      <button id="music-btn" class="text-btn"></button>
+      <h3>Mouse &amp; keyboard</h3>
       <ul class="controls">
         <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</li>
         <li><kbd>Mouse</kbd> look around</li>
         <li><kbd>Shift</kbd> walk faster</li>
         <li><kbd>E</kbd> or <kbd>Click</kbd> view an exhibit</li>
         <li><kbd>1</kbd>–<kbd>9</kbd> jump to a room</li>
-        <li><kbd>M</kbd> toggle map</li>
+        <li><kbd>M</kbd> map &nbsp;<kbd>N</kbd> music</li>
         <li><kbd>Esc</kbd> pause</li>
+      </ul>
+      <h3>Phone &amp; tablet</h3>
+      <ul class="controls">
+        <li>Left thumb stick: walk</li>
+        <li>Drag anywhere else: look around</li>
+        <li>Tap an exhibit: view it</li>
+        <li>Turn your phone sideways for the best view</li>
       </ul>
       <p id="credits"></p>
     </div>
@@ -53,7 +73,7 @@
       <img id="info-image" alt="" />
       <div id="info-body"></div>
       <a id="info-link" target="_blank" rel="noopener"></a>
-      <p class="hint">Press <kbd>E</kbd> or <kbd>Esc</kbd> to return to the museum</p>
+      <p class="hint"><span class="desktop-only">Press <kbd>E</kbd> or <kbd>Esc</kbd> to return to the museum</span><span class="touch-only">Tap &times; to return to the museum</span></p>
     </div>
   </div>
 

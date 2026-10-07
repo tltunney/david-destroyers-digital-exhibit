@@ -3,6 +3,7 @@ import { PointerLockControls } from 'three/addons/controls/PointerLockControls.j
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { MUSEUM, ROOMS } from './config.js';
+import { AmbientMusic } from './music.js';
 
 // ---------------------------------------------------------------- constants
 const WALL_THICKNESS = 0.4;
@@ -15,6 +16,7 @@ const WALK_SPEED = 4;
 const RUN_SPEED = 7.5;
 const INTERACT_DISTANCE = 6;
 const ROOM_LIGHT = 10;
+const LOOK_SPEED = 0.005; // touch: radians of turn per pixel dragged
 const FONT = '"Helvetica Neue", Helvetica, Arial, sans-serif';
 
 const SIDES = {
@@ -804,10 +806,23 @@ function blocked(x, z) {
   );
 }
 
+// 'desktop' (pointer lock + keyboard) or 'touch' (thumb stick + drag), picked on the start screen
+let mode = null;
+let touchPlaying = false;
+let panelOpen = false;
+const joystick = { x: 0, y: 0 }; // -1..1, pushing up is y = -1
+const isPlaying = () => (mode === 'touch' ? touchPlaying && !panelOpen : controls.isLocked);
+
 function updateMovement(dt) {
-  if (!controls.isLocked) return;
-  const f = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
-  const r = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
+  if (!isPlaying()) return;
+  let f = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
+  let r = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
+  let speed = keys.has('ShiftLeft') || keys.has('ShiftRight') ? RUN_SPEED : WALK_SPEED;
+  if (mode === 'touch' && (joystick.x || joystick.y)) {
+    f = -joystick.y;
+    r = joystick.x;
+    speed = WALK_SPEED * 1.4 * Math.min(1, Math.hypot(f, r)); // push further to go faster
+  }
   if (!f && !r) return;
 
   camera.getWorldDirection(forward);
@@ -815,7 +830,6 @@ function updateMovement(dt) {
   forward.normalize();
   right.crossVectors(forward, UP);
   move.set(0, 0, 0).addScaledVector(forward, f).addScaledVector(right, r).normalize();
-  const speed = keys.has('ShiftLeft') || keys.has('ShiftRight') ? RUN_SPEED : WALK_SPEED;
   move.multiplyScalar(speed * dt);
 
   // move one axis at a time so the player slides along walls
@@ -837,27 +851,82 @@ const ui = {
   roomLabel: $('room-label'),
   minimap: $('minimap'),
   panel: $('info-panel'),
+  enterTouch: $('enter-touch-btn'),
+  musicBtn: $('music-btn'),
+  musicHud: $('music-hud'),
+  joystick: $('joystick'),
+  knob: $('joystick-knob'),
 };
 document.title = MUSEUM.title;
 $('museum-title').textContent = MUSEUM.title;
 $('museum-subtitle').textContent = MUSEUM.subtitle ?? '';
 $('credits').textContent = MUSEUM.credits ?? '';
 
-let panelOpen = false;
 let focused = null;
 
-ui.enter.addEventListener('click', () => controls.lock());
+// ---- music
+const music = new AmbientMusic(MUSEUM.music);
+function updateMusicButtons() {
+  ui.musicBtn.textContent = music.enabled ? '\u266B Music: on' : '\u266B Music: off';
+  ui.musicHud.classList.toggle('off', !music.enabled);
+}
+function toggleMusic() {
+  music.toggle();
+  updateMusicButtons();
+}
+updateMusicButtons();
+ui.musicBtn.addEventListener('click', toggleMusic);
+ui.musicHud.addEventListener('click', toggleMusic);
+document.addEventListener('visibilitychange', () => music.setVisible(!document.hidden));
+
+// ---- start / pause screen
+const prefersTouch = window.matchMedia('(pointer: coarse)').matches;
+if (prefersTouch) {
+  ui.enter.classList.remove('primary');
+  ui.enterTouch.classList.add('primary');
+  ui.enterTouch.parentElement.prepend(ui.enterTouch);
+}
+
+function showMenu() {
+  keys.clear();
+  ui.enter.textContent = 'Resume with mouse & keyboard';
+  ui.enterTouch.textContent = 'Resume on phone / tablet';
+  ui.overlay.classList.remove('hidden');
+}
+
+ui.enter.addEventListener('click', () => {
+  mode = 'desktop';
+  touchPlaying = false;
+  document.body.classList.remove('touch');
+  music.start();
+  controls.lock();
+});
+
+ui.enterTouch.addEventListener('click', () => {
+  mode = 'touch';
+  touchPlaying = true;
+  document.body.classList.add('touch');
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // easier on phone GPUs
+  music.start();
+  ui.overlay.classList.add('hidden');
+  // hide the browser bars where possible (Android, iPad); harmless where unsupported
+  document.documentElement.requestFullscreen?.().then(() => screen.orientation?.lock?.('landscape')).catch(() => {});
+});
+
 controls.addEventListener('lock', () => ui.overlay.classList.add('hidden'));
 controls.addEventListener('unlock', () => {
-  keys.clear();
-  if (!panelOpen) {
-    ui.enter.textContent = 'Resume';
-    ui.overlay.classList.remove('hidden');
-  }
+  if (mode === 'desktop' && !panelOpen) showMenu();
 });
 document.addEventListener('pointerlockerror', () => {
-  if (!panelOpen) ui.overlay.classList.remove('hidden');
+  if (!panelOpen) showMenu();
 });
+
+$('menu-hud').addEventListener('click', () => {
+  touchPlaying = false;
+  resetJoystick();
+  showMenu();
+});
+$('map-hud').addEventListener('click', () => ui.minimap.classList.toggle('hidden'));
 
 function openPanel(exhibit, room) {
   panelOpen = true;
@@ -882,13 +951,15 @@ function openPanel(exhibit, room) {
   link.href = exhibit.link ?? '#';
   ui.panel.classList.remove('hidden');
   ui.prompt.classList.add('hidden');
-  controls.unlock();
+  promptFor = null;
+  resetJoystick();
+  if (mode === 'desktop') controls.unlock();
 }
 
 function closePanel() {
   panelOpen = false;
   ui.panel.classList.add('hidden');
-  controls.lock();
+  if (mode === 'desktop') controls.lock();
 }
 $('info-close').addEventListener('click', closePanel);
 
@@ -898,6 +969,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   keys.add(e.code);
+  if (e.code === 'KeyN') toggleMusic();
   if (!controls.isLocked) return;
   if (e.code === 'KeyE' && focused) openPanel(focused.userData.exhibit, focused.userData.room);
   if (e.code === 'KeyM') ui.minimap.classList.toggle('hidden');
@@ -915,20 +987,99 @@ raycaster.far = INTERACT_DISTANCE;
 const screenCenter = new THREE.Vector2(0, 0);
 const rayTargets = [...interactables, ...blockers];
 
+function exhibitAt(ndc) {
+  raycaster.setFromCamera(ndc, camera);
+  const hit = raycaster.intersectObjects(rayTargets, false)[0];
+  return hit?.object.userData.exhibit ? hit.object : null;
+}
+
+let promptFor = null;
 function updateFocus() {
-  focused = null;
-  if (controls.isLocked) {
-    raycaster.setFromCamera(screenCenter, camera);
-    const hit = raycaster.intersectObjects(rayTargets, false)[0];
-    if (hit?.object.userData.exhibit) focused = hit.object;
-  }
+  focused = isPlaying() ? exhibitAt(screenCenter) : null;
+  if (focused === promptFor) return;
+  promptFor = focused;
   if (focused) {
-    ui.prompt.innerHTML = '';
-    const kbd = document.createElement('kbd');
-    kbd.textContent = 'E';
-    ui.prompt.append(kbd, ` View: ${focused.userData.exhibit.title || 'Exhibit coming soon'}`);
+    ui.prompt.replaceChildren();
+    const title = focused.userData.exhibit.title || 'Exhibit coming soon';
+    if (mode === 'touch') ui.prompt.append(`Tap to view: ${title}`);
+    else {
+      const kbd = document.createElement('kbd');
+      kbd.textContent = 'E';
+      ui.prompt.append(kbd, ` View: ${title}`);
+    }
     ui.prompt.classList.remove('hidden');
   } else ui.prompt.classList.add('hidden');
+}
+ui.prompt.addEventListener('click', () => {
+  if (mode === 'touch' && focused) openPanel(focused.userData.exhibit, focused.userData.room);
+});
+
+// ---------------------------------------------------------------- touch controls
+const STICK_RADIUS = 50;
+let stickPointer = null;
+
+function resetJoystick() {
+  stickPointer = null;
+  joystick.x = joystick.y = 0;
+  ui.knob.style.transform = '';
+}
+
+function moveStick(e) {
+  const rect = ui.joystick.getBoundingClientRect();
+  let dx = e.clientX - (rect.left + rect.width / 2);
+  let dy = e.clientY - (rect.top + rect.height / 2);
+  const dist = Math.hypot(dx, dy);
+  if (dist > STICK_RADIUS) {
+    dx *= STICK_RADIUS / dist;
+    dy *= STICK_RADIUS / dist;
+  }
+  ui.knob.style.transform = `translate(${dx}px, ${dy}px)`;
+  const deadZone = dist < STICK_RADIUS * 0.15;
+  joystick.x = deadZone ? 0 : dx / STICK_RADIUS;
+  joystick.y = deadZone ? 0 : dy / STICK_RADIUS;
+}
+
+ui.joystick.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  stickPointer = e.pointerId;
+  ui.joystick.setPointerCapture(e.pointerId);
+  moveStick(e);
+});
+ui.joystick.addEventListener('pointermove', (e) => {
+  if (e.pointerId === stickPointer) moveStick(e);
+});
+for (const type of ['pointerup', 'pointercancel']) {
+  ui.joystick.addEventListener(type, (e) => {
+    if (e.pointerId === stickPointer) resetJoystick();
+  });
+}
+
+// drag anywhere on the 3D view to look around; a quick tap on an exhibit opens it
+const canvas = renderer.domElement;
+const drag = { id: null, x: 0, y: 0, startX: 0, startY: 0, time: 0 };
+
+canvas.addEventListener('pointerdown', (e) => {
+  if (mode !== 'touch' || !isPlaying() || drag.id !== null) return;
+  Object.assign(drag, { id: e.pointerId, x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY, time: performance.now() });
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (e.pointerId !== drag.id) return;
+  camera.rotation.y -= (e.clientX - drag.x) * LOOK_SPEED;
+  camera.rotation.x = THREE.MathUtils.clamp(camera.rotation.x - (e.clientY - drag.y) * LOOK_SPEED, -1.4, 1.4);
+  drag.x = e.clientX;
+  drag.y = e.clientY;
+});
+for (const type of ['pointerup', 'pointercancel']) {
+  canvas.addEventListener(type, (e) => {
+    if (e.pointerId !== drag.id) return;
+    drag.id = null;
+    const isTap = Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < 10 && performance.now() - drag.time < 350;
+    if (type === 'pointerup' && isTap && isPlaying()) {
+      const tapped = exhibitAt(new THREE.Vector2((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1));
+      if (tapped) openPanel(tapped.userData.exhibit, tapped.userData.room);
+    }
+  });
 }
 
 let currentRoom = null;
@@ -1016,6 +1167,7 @@ window.museum = {
   scene,
   camera,
   controls,
+  music,
   rooms: ROOMS,
   teleport: (id) => teleportTo(ROOMS.find((r) => r.id === id) ?? ROOMS[0]),
 };
