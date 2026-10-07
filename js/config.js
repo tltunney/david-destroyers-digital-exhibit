@@ -156,8 +156,8 @@ export const ROOMS = [
       {
         // full-length marble statue (made by tools/statue/make-statue.mjs); the old bust is the fallback
         type: 'pedestal', x: 0, z: 0, model: 'assets/models/copperfield.glb', material: 'marble', shape: 'bust',
-        // as tall as Michelangelo's David (5.17 m)
-        color: '#f1eee8', scale: 5.17, plinth: { width: 2.3, height: 1.7, inscription: 'DAVID COPPERFIELD' },
+        // a colossal 8 m figure (half again as tall as Michelangelo's 5.17 m David) under the dome
+        color: '#f1eee8', scale: 8, plinth: { width: 3.2, height: 2.3, inscription: 'DAVID COPPERFIELD' },
         spin: false, facing: 'south', spotlight: true, rope: true,
         title: 'David Copperfield', subtitle: 'Narrator and hero of Charles Dickens\'s David Copperfield (1849–50)',
         description: 'Add your introduction to David here.',
