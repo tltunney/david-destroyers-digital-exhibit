@@ -236,7 +236,82 @@ function leather(color) {
   }, 2.5);
 }
 
-const GENERATORS = { wood: woodFloor, concrete, plaster, slats, marble, leather };
+// ---------------------------------------------------------------- Victorian surfaces
+
+// Silk damask wallpaper: the motif is the same color as the ground but shinier, the way real damask
+// catches light. One tile = 0.7 m, with two motifs in a half-drop repeat.
+function damask(color) {
+  const size = SMALL ? 256 : 512;
+  const base = rgb(color);
+  const cloud = fractal(151, 4, 4, 3);
+  const thread = fractal(161, 128, 128, 1);
+  const motif = (x, y) => {
+    const ax = Math.abs(x); // mirror-symmetric, like a woven pattern
+    if (Math.abs(y) < 0.4 && ax < 0.11 * (1 - (y / 0.4) ** 2)) return 1; // central leaf
+    const ring = Math.hypot(ax - 0.19, y + 0.1);
+    if (ring > 0.055 && ring < 0.085) return 1; // scrolls
+    if (((ax - 0.23) / 0.11) ** 2 + ((y - 0.17) / 0.05) ** 2 < 1) return 1; // side leaves
+    if (Math.hypot(x, y + 0.43) < 0.045) return 1; // bud
+    if (((ax - 0.08) / 0.08) ** 2 + ((y - 0.38) / 0.03) ** 2 < 1) return 1; // base flourish
+    return 0;
+  };
+  return surface(size, size, (u, v) => {
+    const center = motif((u - 0.5) * 2, (v - 0.5) * 2);
+    const corner = motif((((u + 0.5) % 1) - 0.5) * 2, (((v + 0.5) % 1) - 0.5) * 2);
+    const m = Math.max(center, corner);
+    const t = thread(u, v);
+    const k = (m ? 1.14 : 0.94) * (0.97 + cloud(u, v) * 0.06) * (0.98 + t * 0.04);
+    return [...tint(base, k), m * 0.5 + t * 0.06, m ? 0.36 : 0.78];
+  }, 1.2);
+}
+
+// Polished mahogany wainscot: one raised panel per tile (1 m wide × 1.1 m tall) inside a frame.
+function wainscot(color) {
+  const size = SMALL ? 256 : 512;
+  const base = rgb(color);
+  const grain = fractal(171, 40, 3, 4);
+  const frame = 0.13;
+  const bevel = 0.06;
+  return surface(size, size, (u, v) => {
+    const edge = Math.min(u, 1 - u, v, 1 - v); // distance from the tile edge
+    const g = grain(u, v);
+    let h;
+    let k;
+    if (edge < frame) {
+      h = 1; // stiles and rails
+      k = 1;
+    } else if (edge < frame + 0.012) {
+      h = 0.5; // shadow line where the panel meets the frame
+      k = 0.6;
+    } else if (edge < frame + bevel) {
+      const t = (edge - frame - 0.012) / (bevel - 0.012);
+      h = 0.55 + t * 0.35; // bevel rising to the panel field
+      k = 0.82 + t * 0.12;
+    } else {
+      h = 0.92; // raised field
+      k = 1.04;
+    }
+    const c = tint(base, k * (0.82 + g * 0.3));
+    return [...c, h, 0.3 + g * 0.12];
+  }, 7);
+}
+
+// Button-tufted velvet for settees. One tile = 0.5 m: a diamond grid of puffs pinned by buttons.
+function tufted(color) {
+  const size = 256;
+  const base = rgb(color);
+  const nap = fractal(181, 64, 64, 2);
+  return surface(size, size, (u, v) => {
+    const a = Math.sin(Math.PI * 2 * (u + v));
+    const b = Math.sin(Math.PI * 2 * (u - v));
+    const puff = Math.sqrt(Math.abs(a * b)); // 0 along the creases, 1 in the middle of each diamond
+    const button = Math.abs(a) < 0.12 && Math.abs(b) < 0.12;
+    const k = button ? 0.45 : (0.62 + puff * 0.45) * (0.96 + nap(u, v) * 0.08);
+    return [...tint(base, k), button ? 0 : puff, button ? 0.4 : 0.85 - puff * 0.15];
+  }, 4);
+}
+
+const GENERATORS = { wood: woodFloor, concrete, plaster, slats, marble, leather, damask, wainscot, tufted };
 const cache = new Map();
 
 // Returns { map, normalMap, roughnessMap } for a surface type and color.
@@ -255,4 +330,9 @@ export function surfaceMaps(kind, color, repeatX = 1, repeatY = 1) {
 }
 
 // How big one texture tile is in meters, so surfaces line up with real-world scale.
-export const TILE_SIZE = { wood: [2, 2], concrete: [4, 4], plaster: [2, 2], slats: [1, 2.5], marble: [1, 1], leather: [0.5, 0.5] };
+export const TILE_SIZE = {
+  wood: [2, 2], concrete: [4, 4], plaster: [2, 2], slats: [1, 2.5], marble: [1, 1], leather: [0.5, 0.5],
+  damask: [0.7, 0.7], wainscot: [1, 1.1], tufted: [0.5, 0.5],
+};
+
+export const SMALL_SCREEN = SMALL;

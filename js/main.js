@@ -8,7 +8,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { surfaceMaps, TILE_SIZE } from './textures.js';
+import { surfaceMaps, TILE_SIZE, SMALL_SCREEN } from './textures.js';
 import { MUSEUM, ROOMS } from './config.js';
 import { AmbientMusic } from './music.js';
 
@@ -69,6 +69,31 @@ for (const room of ROOMS) {
   room.doors ??= {};
   for (const side of Object.keys(SIDES)) room.doors[side] ??= [];
   room.footprints = []; // things standing on the floor, for the baked floor shadows
+  room.openings ??= [];
+}
+
+// Gallery wings attached to the rotunda: work out where each one sits and turns,
+// and cut matching doorways in the wing and in the rotunda wall it touches.
+for (const room of ROOMS) {
+  if (room.attach) {
+    const hub = ROOMS.find((r) => r.id === room.attach.to);
+    const angle = THREE.MathUtils.degToRad(room.attach.angle);
+    const dist = hub.apothem + room.d / 2;
+    room.x = hub.x + Math.sin(angle) * dist;
+    room.z = hub.z - Math.cos(angle) * dist;
+    room.rot = -angle; // the wing's own "north" points away from the rotunda
+    const width = room.attach.door ?? 4;
+    room.doors.south.push({ at: 0, width, to: hub });
+    hub.openings.push({ angle: room.attach.angle, width, to: room });
+  }
+}
+for (const room of ROOMS) {
+  for (const opening of room.openings) {
+    if (!opening.link) continue;
+    const other = ROOMS.find((r) => r.id === opening.link);
+    other.doors.north.push({ at: 0, width: opening.width, to: room });
+    opening.to = other;
+  }
 }
 
 // ---------------------------------------------------------------- geometry helpers
@@ -100,27 +125,50 @@ function solidRanges(room, side) {
   return ranges;
 }
 
-function addCollider(x, z, w, d) {
-  colliders.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2 });
+// Each room is built in its own local space (centered on 0,0, unturned) inside a group that places
+// and turns it in the world. `parent` is the group being built into; `frame` is its placement.
+let parent = scene;
+let frame = { x: 0, z: 0, rot: 0 };
+
+function toWorld(lx, lz, f = frame) {
+  const c = Math.cos(f.rot);
+  const s = Math.sin(f.rot);
+  return { x: f.x + lx * c + lz * s, z: f.z - lx * s + lz * c };
+}
+function toLocal(wx, wz, f) {
+  const dx = wx - f.x;
+  const dz = wz - f.z;
+  const c = Math.cos(f.rot);
+  const s = Math.sin(f.rot);
+  return { x: dx * c - dz * s, z: dx * s + dz * c };
+}
+const roomFrame = (room) => ({ x: room.x, z: room.z, rot: room.rot ?? 0 });
+
+// Solid boxes the visitor can't walk through, stored in world space and allowed to sit at an angle.
+function addCollider(x, z, w, d, rot = 0) {
+  const p = toWorld(x, z);
+  const total = frame.rot + rot;
+  colliders.push({ x: p.x, z: p.z, hw: w / 2, hd: d / 2, c: Math.cos(total), s: Math.sin(total) });
 }
 
 function addBox(w, h, d, material, x, y, z, collide = false) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
   mesh.position.set(x, y, z);
-  scene.add(mesh);
+  parent.add(mesh);
   if (collide) addCollider(x, z, w, d);
   return mesh;
 }
 
 // A door declared on one room gets a matching opening in the room behind that wall.
 function linkDoors() {
-  for (const a of ROOMS) {
+  const plain = (r) => !r.rot && !r.shape;
+  for (const a of ROOMS.filter(plain)) {
     for (const side of Object.keys(SIDES)) {
       for (const door of [...a.doors[side]]) {
         if (door.to) continue;
         const opp = SIDES[side].opposite;
         const world = wallCenter(a, side) + door.at;
-        for (const b of ROOMS) {
+        for (const b of ROOMS.filter(plain)) {
           if (b === a || Math.abs(wallPlane(b, opp) - wallPlane(a, side)) > 0.01) continue;
           const local = world - wallCenter(b, opp);
           if (Math.abs(local) + door.width / 2 > wallLength(b, opp) / 2 + 0.01) continue;
@@ -238,19 +286,33 @@ function roomAO(room, { doors = true, objects = true, strength = 1 } = {}) {
   }
   if (objects) {
     for (const f of room.footprints) {
-      const shape = () => {
-        const cx = px(f.x);
-        const cy = pz(f.z);
-        const hw = (f.w / 2) * AO_PPM;
-        const hd = (f.d / 2) * AO_PPM;
-        if (f.round) ctx.ellipse(cx, cy, hw, hd, 0, 0, Math.PI * 2);
-        else ctx.rect(cx - hw, cy - hd, hw * 2, hd * 2);
-      };
+      const shape = () => footprintShape(ctx, px(f.x), pz(f.z), f, AO_PPM);
       softShadow(ctx, shape, 0.45 * AO_PPM, 0.4); // wide and soft
       softShadow(ctx, shape, 0.08 * AO_PPM, 0.55); // tight contact shadow
     }
   }
   return new THREE.CanvasTexture(canvas);
+}
+
+// Draws an object's footprint (box or round, possibly turned) as a canvas path.
+function footprintShape(ctx, cx, cy, f, ppm) {
+  const hw = (f.w / 2) * ppm;
+  const hd = (f.d / 2) * ppm;
+  // the object turns by `rot` around the vertical axis; on the canvas (z pointing down) that is -rot
+  const r = -(f.rot ?? 0);
+  if (f.round) {
+    ctx.ellipse(cx, cy, hw, hd, r, 0, Math.PI * 2);
+    return;
+  }
+  const c = Math.cos(r);
+  const s = Math.sin(r);
+  [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([sx, sy], k) => {
+    const x = cx + sx * hw * c - sy * hd * s;
+    const y = cy + sx * hw * s + sy * hd * c;
+    if (k) ctx.lineTo(x, y);
+    else ctx.moveTo(x, y);
+  });
+  ctx.closePath();
 }
 
 // Wall shadow map: darker toward the floor, the ceiling, and both corners.
@@ -310,10 +372,14 @@ function decal(map, w, h, { additive = false, opacity = 1, layer = 1 } = {}) {
 }
 
 // Adds the wall shadow and spotlight wash behind something hanging on a wall (local coordinates of its group).
-function addWallLighting(group, w, h, washWidth = w + 1.8) {
+function addWallLighting(group, w, h, washWidth = w + 1.8, withWash = true) {
   const scale = 1 / (1 - 2 * SHADOW_INSET);
   const shadow = decal(SHADOW_TEX, w * scale, h * scale, { opacity: 0.5, layer: 1 });
   shadow.position.set(0, -0.05, 0.012);
+  if (!withWash) {
+    group.add(shadow);
+    return;
+  }
   const wash = decal(WASH_TEX, washWidth, h + 2.6, { additive: true, opacity: 0.42, layer: 2 });
   wash.position.set(0, 0.35, 0.022);
   group.add(shadow, wash);
@@ -338,12 +404,14 @@ function addTrackSpot(room, side, along, targetY) {
   lens.position.z = 0.111;
   pivot.add(can, lens);
   group.add(stem, pivot);
-  scene.add(group);
-  pivot.lookAt(target.x, targetY, target.z);
+  parent.add(group);
+  const t = toWorld(target.x, target.z);
+  pivot.lookAt(t.x, targetY, t.z);
 }
 
 // One black track along each wall that has things hanging on it.
 function buildTracks(room) {
+  if (room.victorian) return;
   for (const side of Object.keys(SIDES)) {
     const items = (room.exhibits ?? []).filter((ex) => ex.wall === side && (ex.type === 'painting' || ex.type === 'panel'));
     if (!items.length) continue;
@@ -511,12 +579,18 @@ const MAT = {
   pedestal: new THREE.MeshStandardMaterial({ ...surfaceMaps('plaster', '#f4f2ed', 0.5, 0.5), roughness: 1 }),
   metal: new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.35, metalness: 0.85 }),
   brass: new THREE.MeshStandardMaterial({ color: 0xc9a35a, roughness: 0.28, metalness: 1 }),
-  velvet: new THREE.MeshStandardMaterial({ color: 0x5c0f16, roughness: 0.85 }),
+  rope: new THREE.MeshStandardMaterial({ color: 0x5c0f16, roughness: 0.85 }),
   leather: new THREE.MeshStandardMaterial({ ...surfaceMaps('leather', '#3a2a20', 4.8, 1.2), roughness: 1 }),
   planter: new THREE.MeshStandardMaterial({ ...surfaceMaps('concrete', '#8d8a84', 0.5, 0.5), roughness: 1 }),
   leaf: new THREE.MeshStandardMaterial({ color: 0x3d7a3f, roughness: 0.75 }),
   leafDark: new THREE.MeshStandardMaterial({ color: 0x2c5e33, roughness: 0.75 }),
   glass: new THREE.MeshStandardMaterial({ color: 0xdfe8ee, roughness: 0.04, metalness: 0.9, transparent: true, opacity: 0.25 }),
+  // Victorian
+  mahogany: new THREE.MeshStandardMaterial({ color: 0x4a2216, roughness: 0.35 }),
+  gilt: new THREE.MeshStandardMaterial({ color: 0xc9a24f, roughness: 0.32, metalness: 1 }),
+  plasterwork: new THREE.MeshStandardMaterial({ ...surfaceMaps('plaster', '#efe6d4', 1, 1), roughness: 1 }),
+  velvet: new THREE.MeshStandardMaterial({ ...surfaceMaps('tufted', '#1d3b2a', 4.4, 1.5), roughness: 1 }),
+  gaslight: new THREE.MeshBasicMaterial({ color: new THREE.Color(2.4, 1.7, 0.95) }),
   // brighter than white so the light strips glow (and bloom) after tone mapping
   light: new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 2.85, 2.6) }),
   sky: new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 1.8, 2.1) }),
@@ -534,7 +608,7 @@ function buildRoom(room) {
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(x, 0, z);
   floor.receiveShadow = true;
-  scene.add(floor);
+  parent.add(floor);
 
   // ceiling: wood slats or plain plaster
   const ceilingMaps = room.ceiling === 'wood' ? surfaceMaps('slats', WOOD_COLOR, w, d / TILE_SIZE.slats[1]) : surfaceMaps('plaster', '#f7f4ee', w / 2, d / 2);
@@ -544,7 +618,7 @@ function buildRoom(room) {
   );
   ceiling.rotation.x = Math.PI / 2;
   ceiling.position.set(x, height, z);
-  scene.add(ceiling);
+  parent.add(ceiling);
 
   // walls (with door openings), baseboards, door trim and signs
   for (const side of Object.keys(SIDES)) buildWall(room, side);
@@ -569,6 +643,13 @@ function buildRoom(room) {
 // and a couple of real lights (real lights are expensive, so we keep them few).
 function buildCeilingLights(room) {
   const { x, z, w, d, height } = room;
+  if (room.victorian) {
+    // lit by gas-lamp sconces and one warm room light instead of LED strips
+    const light = new THREE.PointLight(0xffd9a8, ROOM_LIGHT * 1.1 * (height / DEFAULT_HEIGHT), Math.max(w, d) * 1.2, 1);
+    light.position.set(x, height - 0.8, z);
+    parent.add(light);
+    return;
+  }
   const y = height - 0.03;
   const longAlongX = w >= d;
   const span = (longAlongX ? w : d) - 3;
@@ -608,7 +689,7 @@ function buildCeilingLights(room) {
     const t = count === 1 ? 0 : (i === 0 ? -0.25 : 0.25);
     const light = new THREE.PointLight(0xffe6c8, ROOM_LIGHT * (height / DEFAULT_HEIGHT), Math.max(w, d), 1);
     light.position.set(x + (longAlongX ? w * t : 0), height - 0.8, z + (longAlongX ? 0 : d * t));
-    scene.add(light);
+    parent.add(light);
   }
 }
 
@@ -617,8 +698,8 @@ function buildWall(room, side) {
   const len = wallLength(room, side);
   const H = room.height;
   const wood = side === room.woodWall;
-  const kind = wood ? 'slats' : 'plaster';
-  const color = wood ? WOOD_COLOR : side === room.featureWall ? room.accent ?? '#888' : room.wallColor ?? '#f4f0e8';
+  const kind = wood ? 'slats' : room.wallpaper ? 'damask' : 'plaster';
+  const color = wood ? WOOD_COLOR : room.wallpaper ?? (side === room.featureWall ? room.accent ?? '#888' : room.wallColor ?? '#f4f0e8');
   const ao = wallAO(room, side);
   // on the south and west walls the box face's texture runs backwards, so mirror the shadow map
   const mirrored = side === 'south' || side === 'west';
@@ -649,12 +730,22 @@ function buildWall(room, side) {
     wall.receiveShadow = true;
     blockers.push(wall);
 
-    if (bottom === 0 && !wood) {
+    if (bottom === 0 && room.wainscot) addWainscot(room, side, mid, length);
+    else if (bottom === 0 && !wood) {
       // recessed shadow-gap baseboard, oak
       const bp = wallPoint(room, side, mid, HALF_WALL + 0.015);
       const [tw, td] = s.horizontal ? [length, 0.03] : [0.03, length];
       addBox(tw, 0.12, td, MAT.oak, bp.x, 0.07, bp.z);
     }
+  }
+  if (room.victorian) {
+    // moulded plaster cornice where the wall meets the ceiling, with a gilt fillet
+    const cp = wallPoint(room, side, 0, HALF_WALL + 0.12);
+    const [cw, cd] = s.horizontal ? [len, 0.24] : [0.24, len];
+    addBox(cw, 0.36, cd, MAT.plasterwork, cp.x, H - 0.18, cp.z);
+    const gp = wallPoint(room, side, 0, HALF_WALL + 0.25);
+    const [gw, gd] = s.horizontal ? [len, 0.03] : [0.03, len];
+    addBox(gw, 0.05, gd, MAT.gilt, gp.x, H - 0.4, gp.z);
   }
 
   for (const door of room.doors[side]) {
@@ -663,11 +754,11 @@ function buildWall(room, side) {
     const post = s.horizontal ? [0.1, DOOR_HEIGHT, 0.04] : [0.04, DOOR_HEIGHT, 0.1];
     for (const off of [-door.width / 2 - 0.05, door.width / 2 + 0.05]) {
       const p = along(off);
-      addBox(...post, MAT.oak, p.x, DOOR_HEIGHT / 2, p.z);
+      addBox(...post, room.victorian ? MAT.mahogany : MAT.oak, p.x, DOOR_HEIGHT / 2, p.z);
     }
     const tp = along(0);
     const top = s.horizontal ? [door.width + 0.2, 0.1, 0.04] : [0.04, 0.1, door.width + 0.2];
-    addBox(...top, MAT.oak, tp.x, DOOR_HEIGHT + 0.05, tp.z);
+    addBox(...top, room.victorian ? MAT.mahogany : MAT.oak, tp.x, DOOR_HEIGHT + 0.05, tp.z);
 
     // sign above the door naming the room it leads to
     if (door.to) {
@@ -675,13 +766,62 @@ function buildWall(room, side) {
       const signW = Math.max(door.width, 3.2);
       const sign = new THREE.Mesh(
         new THREE.PlaneGeometry(signW, signW * (160 / 1024)),
-        new THREE.MeshBasicMaterial({ map: signTexture(door.to.name, door.to.accent ?? '#d9a441') }),
+        new THREE.MeshBasicMaterial({ map: signTexture(door.label ?? door.to.name, door.to.accent ?? '#d9a441') }),
       );
       sign.position.set(sp.x, DOOR_HEIGHT + 0.5, sp.z);
       sign.rotation.y = s.rotY;
-      scene.add(sign);
+      parent.add(sign);
     }
   }
+}
+
+// Victorian wall finish below the wallpaper: raised mahogany panels, a chair rail, and a tall skirting.
+const WAINSCOT_H = 1.1;
+function addWainscot(room, side, mid, length) {
+  const s = SIDES[side];
+  const box = (thick, h, y, inset, material) => {
+    const p = wallPoint(room, side, mid, HALF_WALL + inset);
+    const [bw, bd] = s.horizontal ? [length, thick] : [thick, length];
+    return addBox(bw, h, bd, material, p.x, y, p.z);
+  };
+  const [tx, ty] = TILE_SIZE.wainscot;
+  box(0.04, WAINSCOT_H, WAINSCOT_H / 2, 0.02, new THREE.MeshStandardMaterial({ ...surfaceMaps('wainscot', '#5a2a1a', length / tx, WAINSCOT_H / ty), roughness: 1 }));
+  box(0.08, 0.07, WAINSCOT_H + 0.03, 0.04, MAT.mahogany); // chair rail
+  box(0.06, 0.2, 0.1, 0.03, MAT.mahogany); // skirting
+}
+
+// A brass gas-lamp sconce with a frosted glass globe and a warm glow on the wall behind it.
+const SCONCE_PARTS = {
+  plate: new THREE.CylinderGeometry(0.075, 0.075, 0.025, 24).rotateX(Math.PI / 2),
+  arm: new THREE.CylinderGeometry(0.014, 0.014, 0.24, 10).rotateX(Math.PI / 2),
+  cup: new THREE.CylinderGeometry(0.055, 0.03, 0.07, 20),
+  globe: new THREE.SphereGeometry(0.085, 24, 16),
+  chimney: new THREE.CylinderGeometry(0.03, 0.04, 0.09, 16, 1, true),
+};
+const GLOW_TEX = canvasTexture(256, 256, (ctx, w, h) => {
+  const g = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
+  g.addColorStop(0, 'rgba(255,214,150,0.9)');
+  g.addColorStop(0.4, 'rgba(255,200,130,0.3)');
+  g.addColorStop(1, 'rgba(255,200,130,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+});
+function addSconce(room, side, at, y = 2.6) {
+  const g = new THREE.Group();
+  const plate = new THREE.Mesh(SCONCE_PARTS.plate, MAT.gilt);
+  plate.position.z = 0.012;
+  const arm = new THREE.Mesh(SCONCE_PARTS.arm, MAT.gilt);
+  arm.position.set(0, -0.05, 0.13);
+  const cup = new THREE.Mesh(SCONCE_PARTS.cup, MAT.gilt);
+  cup.position.set(0, -0.03, 0.24);
+  const globe = new THREE.Mesh(SCONCE_PARTS.globe, MAT.gaslight);
+  globe.position.set(0, 0.07, 0.24);
+  const chimney = new THREE.Mesh(SCONCE_PARTS.chimney, MAT.gilt);
+  chimney.position.set(0, 0.18, 0.24);
+  const glow = decal(GLOW_TEX, 1.5, 1.5, { additive: true, opacity: 0.5, layer: 3 });
+  glow.position.set(0, 0.1, 0.03);
+  g.add(plate, arm, cup, globe, chimney, glow);
+  mountOnWall(room, { wall: side, at }, g, y);
 }
 
 // Glass entrance doors with daylight outside and an EXIT sign above, centered on a wall.
@@ -747,14 +887,14 @@ function buildEntrance(room, side) {
   const p = wallPoint(room, side, 0, HALF_WALL + 2);
   spill.position.set(p.x, 0.005, p.z);
   spill.rotation.z = SIDES[side].rotY + Math.PI;
-  scene.add(spill);
+  parent.add(spill);
 }
 
 function mountOnWall(room, ex, object, y) {
   const p = wallPoint(room, ex.wall, ex.at ?? 0, HALF_WALL);
   object.position.set(p.x, y, p.z);
   object.rotation.y = SIDES[ex.wall].rotY;
-  scene.add(object);
+  parent.add(object);
 }
 
 function makeInteractive(meshes, exhibit, room) {
@@ -788,7 +928,7 @@ function buildPainting(room, ex) {
 
   group.add(frame, mat, art);
   if (ex.title) group.add(label);
-  addWallLighting(group, w + 0.4, h + 0.4);
+  addWallLighting(group, w + 0.4, h + 0.4, undefined, !room.victorian);
   mountOnWall(room, ex, group, y);
   makeInteractive([frame, mat, art, label], ex, room);
 }
@@ -803,8 +943,11 @@ function buildPanel(room, ex) {
   );
   panel.position.z = 0.045; // stands off the wall on hidden spacers
   group.add(panel);
-  addWallLighting(group, w, h, w + 1);
+  addWallLighting(group, w, h, w + 1, !room.victorian);
   mountOnWall(room, ex, group, ex.y ?? 1.9);
+  if (room.victorian && ex.sconces !== false) {
+    for (const sgn of [-1, 1]) addSconce(room, ex.wall, (ex.at ?? 0) + sgn * (w / 2 + 0.6), Math.max(2.4, (ex.y ?? 1.9) + 0.4));
+  }
   makeInteractive([panel], { ...ex, description: ex.description || ex.text || 'Text coming soon.' }, room);
 }
 
@@ -1023,7 +1166,7 @@ function buildPedestal(room, ex) {
   if (ex.rope) buildRopeBarrier(room, px, pz, baseW + 1.6);
   const holder = new THREE.Group();
   holder.position.set(px, baseH + 0.06 + 0.5 * scale, pz);
-  scene.add(holder);
+  parent.add(holder);
 
   // invisible box so the whole object area is easy to click
   const hitbox = new THREE.Mesh(new THREE.BoxGeometry(baseW, scale, baseW), new THREE.MeshBasicMaterial({ visible: false }));
@@ -1070,7 +1213,7 @@ function buildPedestal(room, ex) {
     spot.shadow.normalBias = 0.02;
     spot.shadow.camera.near = 1;
     spot.shadow.camera.far = 15;
-    scene.add(spot);
+    parent.add(spot);
   }
 }
 
@@ -1090,7 +1233,7 @@ function buildRopeBarrier(room, cx, cz, size) {
     top.position.set(c.x, h + 0.02, c.z);
     for (const m of [base, pole, top]) {
       m.castShadow = true;
-      scene.add(m);
+      parent.add(m);
     }
     room.footprints.push({ x: c.x, z: c.z, w: 0.34, d: 0.34, round: true });
   }
@@ -1100,9 +1243,9 @@ function buildRopeBarrier(room, cx, cz, size) {
     const mid = a.clone().lerp(b, 0.5);
     mid.y -= 0.22;
     const curve = new THREE.CatmullRomCurve3([a, a.clone().lerp(mid, 0.5).setY(a.y - 0.15), mid, b.clone().lerp(mid, 0.5).setY(b.y - 0.15), b]);
-    const rope = new THREE.Mesh(new THREE.TubeGeometry(curve, 32, 0.022, 10), MAT.velvet);
+    const rope = new THREE.Mesh(new THREE.TubeGeometry(curve, 32, 0.022, 10), MAT.rope);
     rope.castShadow = true;
-    scene.add(rope);
+    parent.add(rope);
   }
   addCollider(cx, cz, size + 0.3, size + 0.3);
 }
@@ -1141,9 +1284,23 @@ function buildDecor(room, item) {
       leaf.scale.set(1, 0.8 + r() * 0.5, 1);
       group.add(leaf);
     }
+  } else if (item.type === 'settee') {
+    // Victorian button-tufted velvet ottoman on turned mahogany legs
+    size = [2.2, 0.75];
+    const cushion = new THREE.Mesh(new RoundedBoxGeometry(2.2, 0.22, 0.75, 4, 0.08), MAT.velvet);
+    cushion.position.y = 0.47;
+    const apron = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.14, 0.66), MAT.mahogany);
+    apron.position.y = 0.3;
+    group.add(cushion, apron);
+    const legGeo = new THREE.CylinderGeometry(0.045, 0.03, 0.24, 16);
+    for (const [lx, lz] of [[-0.95, -0.27], [0.95, -0.27], [-0.95, 0.27], [0.95, 0.27]]) {
+      const leg = new THREE.Mesh(legGeo, MAT.mahogany);
+      leg.position.set(lx, 0.12, lz);
+      group.add(leg);
+    }
   } else if (item.type === 'desk') {
     size = [3.2, 1];
-    const desk = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.05, 1), MAT.oak);
+    const desk = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.05, 1), room.victorian ? MAT.mahogany : MAT.oak);
     desk.position.y = 0.525;
     const top = new THREE.Mesh(new RoundedBoxGeometry(3.4, 0.06, 1.15, 2, 0.02), MAT.pedestal);
     top.position.y = 1.08;
@@ -1155,31 +1312,371 @@ function buildDecor(room, item) {
   group.traverse((m) => {
     if (m.isMesh) m.castShadow = m.receiveShadow = true;
   });
-  scene.add(group);
+  parent.add(group);
 
-  // axis-aligned collision box that covers the rotated footprint
-  const c = Math.abs(Math.cos(rot));
-  const s = Math.abs(Math.sin(rot));
-  const fw = size[0] * c + size[1] * s;
-  const fd = size[0] * s + size[1] * c;
-  addCollider(x, z, fw, fd);
-  room.footprints.push({ x, z, w: fw, d: fd, round });
+  addCollider(x, z, size[0], size[1], rot);
+  room.footprints.push({ x, z, w: size[0], d: size[1], round, rot });
+}
+
+// ---------------------------------------------------------------- the rotunda
+// An octagonal domed hall: damask walls over mahogany wainscot, marble columns at the corners,
+// an inlaid marble floor, and a coffered dome open to the sky through an oculus.
+// Angles are compass bearings: 0 = north, 90 = east, 180 = south, -90 = west.
+const compass = (deg) => {
+  const a = THREE.MathUtils.degToRad(deg);
+  return { x: Math.sin(a), z: -Math.cos(a) };
+};
+
+// Inlaid marble floor: cream stone with a sixteen-point star medallion and a dark border.
+function rotundaFloorTexture(room, R) {
+  const S = SMALL_SCREEN ? 1024 : 2048;
+  const ppm = S / (2 * R);
+  return canvasTexture(S, S, (ctx) => {
+    const c = S / 2;
+    const at = (deg, r) => {
+      const d = compass(deg);
+      return [c + d.x * r * ppm, c + d.z * r * ppm];
+    };
+    // adds a closed shape to the current path (call ctx.beginPath() first)
+    const poly = (pts) => {
+      pts.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.closePath();
+    };
+    const octagon = (apothem) => poly(Array.from({ length: 8 }, (_, k) => at(22.5 + k * 45, apothem / Math.cos(Math.PI / 8))));
+    ctx.fillStyle = '#e6dfd0';
+    ctx.fillRect(0, 0, S, S);
+    // veins
+    const r = seededRandom('rotunda-floor');
+    for (let i = 0; i < 140; i++) {
+      ctx.strokeStyle = `rgba(110,100,85,${0.05 + r() * 0.1})`;
+      ctx.lineWidth = 1 + r() * 2.5;
+      ctx.beginPath();
+      const x = r() * S;
+      const y = r() * S;
+      ctx.moveTo(x, y);
+      ctx.bezierCurveTo(x + (r() - 0.5) * 300, y + (r() - 0.5) * 300, x + (r() - 0.5) * 400, y + (r() - 0.5) * 400, x + (r() - 0.5) * 500, y + (r() - 0.5) * 500);
+      ctx.stroke();
+    }
+    // stone joints: rings and spokes
+    ctx.strokeStyle = 'rgba(90,80,65,0.28)';
+    ctx.lineWidth = Math.max(1, ppm * 0.012);
+    for (let rr = 6.5; rr < R; rr += 1.6) {
+      ctx.beginPath();
+      ctx.arc(c, c, rr * ppm, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    for (let deg = 0; deg < 360; deg += 15) {
+      ctx.beginPath();
+      ctx.moveTo(...at(deg, 5.4));
+      ctx.lineTo(...at(deg, R));
+      ctx.stroke();
+    }
+    // border band just inside the walls
+    ctx.fillStyle = '#23413a';
+    ctx.beginPath();
+    octagon(room.apothem - 0.25);
+    octagon(room.apothem - 1.05);
+    ctx.fill('evenodd');
+    ctx.strokeStyle = '#b8913a';
+    ctx.lineWidth = ppm * 0.04;
+    ctx.beginPath();
+    octagon(room.apothem - 1.1);
+    ctx.stroke();
+    // medallion: rings and a sixteen-point star in rust and green
+    ctx.beginPath();
+    ctx.arc(c, c, 5.2 * ppm, 0, Math.PI * 2);
+    ctx.arc(c, c, 4.75 * ppm, 0, Math.PI * 2, true);
+    ctx.fillStyle = '#23413a';
+    ctx.fill();
+    ctx.strokeStyle = '#b8913a';
+    ctx.beginPath();
+    ctx.arc(c, c, 4.6 * ppm, 0, Math.PI * 2);
+    ctx.stroke();
+    for (let k = 0; k < 16; k++) {
+      const deg = k * 22.5;
+      const tip = k % 2 ? 3.2 : 4.45;
+      ctx.beginPath();
+      poly([at(deg - 11.25, 1.9), at(deg, tip), at(deg + 11.25, 1.9)]);
+      ctx.fillStyle = k % 2 ? '#8a3b2a' : '#23413a';
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.arc(c, c, 1.9 * ppm, 0, Math.PI * 2);
+    ctx.fillStyle = '#d9cfbb';
+    ctx.fill();
+    ctx.strokeStyle = '#8a3b2a';
+    ctx.lineWidth = ppm * 0.06;
+    ctx.stroke();
+  });
+}
+
+// Shadow map for the rotunda floor: dark along the walls (not across doorways) and under objects.
+function rotundaAO(room, R, faceW) {
+  const ppm = AO_PPM;
+  const S = Math.ceil(2 * R * ppm);
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = S;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, S, S);
+  const c = S / 2;
+  const band = 0.6 * ppm;
+  for (let k = 0; k < 8; k++) {
+    const deg = k * 45;
+    const n = compass(deg);
+    const t = compass(deg + 90); // along the face
+    const opening = room.openings.find((o) => ((o.angle % 360) + 360) % 360 === deg);
+    const ranges = opening
+      ? [[-faceW / 2, -opening.width / 2], [opening.width / 2, faceW / 2]]
+      : [[-faceW / 2, faceW / 2]];
+    const a = room.apothem - HALF_WALL;
+    for (const [from, to] of ranges) {
+      const p = (along, depth) => [c + (n.x * (a - depth) + t.x * along) * ppm, c + (n.z * (a - depth) + t.z * along) * ppm];
+      const g = ctx.createLinearGradient(...p(0, 0), ...p(0, band / ppm));
+      ctx.fillStyle = shadowBand(g);
+      ctx.beginPath();
+      [p(from, 0), p(to, 0), p(to, band / ppm), p(from, band / ppm)].forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+  for (const f of room.footprints) {
+    const shape = () => footprintShape(ctx, c + f.x * ppm, c + f.z * ppm, f, ppm);
+    softShadow(ctx, shape, 0.45 * ppm, 0.4);
+    softShadow(ctx, shape, 0.08 * ppm, 0.55);
+  }
+  return new THREE.CanvasTexture(canvas);
+}
+
+// Coffered dome: rows of recessed square panels with gilt rosettes, narrowing toward the oculus.
+function cofferTexture() {
+  const W = SMALL_SCREEN ? 1024 : 2048;
+  return canvasTexture(W, W / 2, (ctx, w, h) => {
+    ctx.fillStyle = '#ece3d1';
+    ctx.fillRect(0, 0, w, h);
+    const cols = 24;
+    const rows = 5;
+    const band = h * 0.1;
+    const cw = w / cols;
+    const ch = (h - band) / rows;
+    for (let r = 0; r < rows; r++) {
+      for (let col = 0; col < cols; col++) {
+        const x = col * cw;
+        const y = r * ch;
+        const step = (inset, color) => {
+          ctx.fillStyle = color;
+          ctx.fillRect(x + cw * inset, y + ch * inset, cw * (1 - 2 * inset), ch * (1 - 2 * inset));
+        };
+        step(0.1, '#d8ccb3');
+        step(0.17, '#c6b89b');
+        const g = ctx.createLinearGradient(x, y + ch * 0.24, x, y + ch * 0.76);
+        g.addColorStop(0, '#b3a385');
+        g.addColorStop(1, '#cdbfa2');
+        ctx.fillStyle = g;
+        ctx.fillRect(x + cw * 0.24, y + ch * 0.24, cw * 0.52, ch * 0.52);
+        ctx.fillStyle = '#c29b45';
+        ctx.beginPath();
+        ctx.arc(x + cw / 2, y + ch / 2, Math.min(cw, ch) * 0.09, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    // gilt band where the dome meets the cornice
+    ctx.fillStyle = '#c29b45';
+    ctx.fillRect(0, h - band, w, band * 0.25);
+    ctx.fillStyle = '#e2d6bd';
+    ctx.fillRect(0, h - band * 0.75, w, band * 0.75);
+    ctx.fillStyle = '#b48a3a';
+    for (let x = 0; x < w; x += w / 96) {
+      ctx.beginPath();
+      ctx.ellipse(x + w / 192, h - band * 0.38, w / 380, band * 0.22, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+}
+
+function buildRotunda(room, group) {
+  const a = room.apothem;
+  const H = room.height;
+  const R = a / Math.cos(Math.PI / 8); // center to corner
+  const faceW = 2 * a * Math.tan(Math.PI / 8);
+  const roomPlace = { ...frame };
+
+  // floor
+  const floorMat = new THREE.MeshStandardMaterial({ map: rotundaFloorTexture(room, R), roughness: 0.22 });
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(R, 8, Math.PI / 8), floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
+  parent.add(floor);
+
+  // the eight walls, each built like the north wall of a narrow room turned to face the center
+  const faceItems = {};
+  for (const ex of room.exhibits ?? []) {
+    if (ex.face === undefined) continue;
+    const key = ((ex.face % 360) + 360) % 360;
+    (faceItems[key] ??= []).push({ ...ex, wall: 'north' });
+  }
+  for (let k = 0; k < 8; k++) {
+    const deg = k * 45;
+    const faceGroup = new THREE.Group();
+    faceGroup.rotation.y = -THREE.MathUtils.degToRad(deg);
+    group.add(faceGroup);
+    parent = faceGroup;
+    frame = { ...roomPlace, rot: -THREE.MathUtils.degToRad(deg) };
+    const openings = room.openings.filter((o) => ((o.angle % 360) + 360) % 360 === deg);
+    const face = Object.assign(Object.create(room), {
+      x: 0, z: 0, w: faceW, d: 2 * a,
+      doors: { north: openings.map((o) => ({ at: 0, width: o.width, to: o.to, label: o.label })), south: [], east: [], west: [] },
+      exhibits: faceItems[deg] ?? [],
+    });
+    buildWall(face, 'north');
+    for (const ex of face.exhibits) {
+      if (ex.type === 'painting') buildPainting(face, ex);
+      else if (ex.type === 'panel') buildPanel(face, ex);
+    }
+  }
+  parent = group;
+  frame = roomPlace;
+
+  // marble columns in the corners, with gilt capitals
+  const shaftH = H - 1.15;
+  const columnMat = new THREE.MeshStandardMaterial({ ...surfaceMaps('marble', '#ece6da', 1, 2), roughness: 1 });
+  const parts = {
+    plinth: new THREE.BoxGeometry(1, 0.28, 1),
+    base: new THREE.CylinderGeometry(0.42, 0.46, 0.16, 32),
+    shaft: new THREE.CylinderGeometry(0.31, 0.35, shaftH, 32),
+    ring: new THREE.TorusGeometry(0.33, 0.04, 12, 32).rotateX(Math.PI / 2),
+    capital: new THREE.CylinderGeometry(0.5, 0.36, 0.3, 32),
+    abacus: new THREE.BoxGeometry(1.05, 0.14, 1.05),
+  };
+  for (let k = 0; k < 8; k++) {
+    const deg = 22.5 + k * 45;
+    const d = compass(deg);
+    const dist = R - 0.95;
+    const col = new THREE.Group();
+    col.position.set(d.x * dist, 0, d.z * dist);
+    col.rotation.y = -THREE.MathUtils.degToRad(deg);
+    const piece = (geo, mat, y) => {
+      const m = new THREE.Mesh(geo, mat);
+      m.position.y = y;
+      m.castShadow = m.receiveShadow = true;
+      col.add(m);
+    };
+    piece(parts.plinth, columnMat, 0.14);
+    piece(parts.base, columnMat, 0.36);
+    piece(parts.shaft, columnMat, 0.44 + shaftH / 2);
+    piece(parts.ring, MAT.gilt, 0.46 + shaftH);
+    piece(parts.capital, MAT.gilt, 0.6 + shaftH);
+    piece(parts.abacus, columnMat, 0.82 + shaftH);
+    parent.add(col);
+    addCollider(d.x * dist, d.z * dist, 1, 1, -THREE.MathUtils.degToRad(deg));
+    room.footprints.push({ x: d.x * dist, z: d.z * dist, w: 1, d: 1, rot: -THREE.MathUtils.degToRad(deg) });
+  }
+
+  // ring of ceiling between the octagon and the round dome, with a gilt molding at the dome's base
+  const domeR = a - HALF_WALL - 0.35;
+  const cap = new THREE.Shape(Array.from({ length: 8 }, (_, k) => {
+    const d = compass(22.5 + k * 45);
+    return new THREE.Vector2(d.x * (R + 0.3), d.z * (R + 0.3));
+  }));
+  const hole = new THREE.Path();
+  hole.absarc(0, 0, domeR, 0, Math.PI * 2, true);
+  cap.holes.push(hole);
+  const capMesh = new THREE.Mesh(new THREE.ShapeGeometry(cap, 96), MAT.plasterwork);
+  capMesh.rotation.x = Math.PI / 2;
+  capMesh.position.y = H;
+  parent.add(capMesh);
+  const domeRing = new THREE.Mesh(new THREE.TorusGeometry(domeR, 0.14, 12, 128).rotateX(Math.PI / 2), MAT.gilt);
+  domeRing.position.y = H - 0.05;
+  parent.add(domeRing);
+
+  // the dome, open at the top
+  const OCULUS = 0.2; // how much of the top is open
+  const rise = 0.62;
+  const domeTex = cofferTexture();
+  const dome = new THREE.Mesh(
+    new THREE.SphereGeometry(domeR, 96, 32, 0, Math.PI * 2, OCULUS, Math.PI / 2 - OCULUS),
+    new THREE.MeshStandardMaterial({ map: domeTex, emissiveMap: domeTex, emissive: 0xffffff, emissiveIntensity: 0.22, roughness: 0.9, side: THREE.BackSide }),
+  );
+  dome.scale.y = rise;
+  dome.position.y = H;
+  parent.add(dome);
+  const oculusR = domeR * Math.sin(OCULUS);
+  const topY = H + domeR * Math.cos(OCULUS) * rise;
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(oculusR, 0.16, 12, 64).rotateX(Math.PI / 2), MAT.gilt);
+  rim.position.y = topY;
+  const sky = new THREE.Mesh(new THREE.CircleGeometry(oculusR + 0.3, 48).rotateX(Math.PI / 2), MAT.sky);
+  sky.position.y = topY + 0.4;
+  parent.add(rim, sky);
+
+  // a faint shaft of daylight falling from the oculus
+  const shaftTex = canvasTexture(4, 256, (ctx, w, h) => {
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, 'rgba(255,248,232,0.9)');
+    g.addColorStop(1, 'rgba(255,248,232,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+  });
+  const shaft = new THREE.Mesh(
+    new THREE.CylinderGeometry(oculusR * 0.95, oculusR * 1.35, topY, 48, 1, true),
+    new THREE.MeshBasicMaterial({ map: shaftTex, transparent: true, opacity: 0.1, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
+  );
+  shaft.position.y = topY / 2;
+  parent.add(shaft);
+
+  // light: a warm room light plus daylight from the oculus
+  const warm = new THREE.PointLight(0xffd9a8, ROOM_LIGHT * 1.7, R * 2.2, 1);
+  warm.position.set(0, H - 1.5, 0);
+  const daylight = new THREE.SpotLight(0xfff4e0, 30, topY + 4, 0.55, 0.7, 1);
+  daylight.position.set(0, topY, 0);
+  daylight.target.position.set(0, 0, 0);
+  parent.add(warm, daylight, daylight.target);
+
+  // the bust and anything else standing on the floor
+  for (const ex of room.exhibits ?? []) {
+    if (ex.face !== undefined) continue;
+    if (ex.type === 'pedestal') buildPedestal(room, ex);
+  }
+  for (const item of room.decor ?? []) buildDecor(room, item);
+
+  floorMat.aoMap = rotundaAO(room, R, faceW);
+  floorMat.needsUpdate = true;
 }
 
 // ---------------------------------------------------------------- build everything
 linkDoors();
-ROOMS.forEach(buildRoom);
+for (const room of ROOMS) {
+  // build each room in its own placed-and-turned group
+  const group = new THREE.Group();
+  group.position.set(room.x, 0, room.z);
+  group.rotation.y = room.rot ?? 0;
+  scene.add(group);
+  parent = group;
+  frame = roomFrame(room);
+  const local = Object.assign(Object.create(room), { x: 0, z: 0 }); // same room, local coordinates
+  if (room.shape === 'octagon') buildRotunda(local, group);
+  else buildRoom(local);
+}
+parent = scene;
+frame = { x: 0, z: 0, rot: 0 };
 scene.add(new THREE.HemisphereLight(0xfff6ea, 0x4a3f35, 0.6));
 
 // ---------------------------------------------------------------- player
 const spawnRoom = ROOMS[0];
 function placePlayer(x, z, facing) {
   camera.position.set(x, EYE_HEIGHT, z);
-  camera.rotation.set(0, FACING[facing] ?? 0, 0);
+  camera.rotation.set(0, typeof facing === 'number' ? facing : FACING[facing] ?? 0, 0);
 }
 placePlayer(MUSEUM.spawn?.x ?? spawnRoom.x, MUSEUM.spawn?.z ?? spawnRoom.z, MUSEUM.spawn?.facing ?? 'north');
 
+const VISIT_ROOMS = ROOMS.filter((r) => !r.passage); // rooms the number keys and minimap count
+
 function teleportTo(room) {
+  if (room.shape === 'octagon') return placePlayer(room.x, room.z + room.apothem - 3, 'north');
+  if (room.attach) {
+    // just inside the doorway from the rotunda, looking into the wing
+    const p = toWorld(0, room.d / 2 - 2.5, roomFrame(room));
+    return placePlayer(p.x, p.z, room.rot);
+  }
   // stand just inside the room's first doorway, facing in
   for (const side of Object.keys(SIDES)) {
     const door = room.doors[side][0];
@@ -1197,10 +1694,18 @@ const right = new THREE.Vector3();
 const move = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
 
+// Is the visitor (a circle) overlapping any collider (a possibly-turned box)?
 function blocked(x, z) {
-  return colliders.some(
-    (c) => x + PLAYER_RADIUS > c.minX && x - PLAYER_RADIUS < c.maxX && z + PLAYER_RADIUS > c.minZ && z - PLAYER_RADIUS < c.maxZ,
-  );
+  for (const b of colliders) {
+    const dx = x - b.x;
+    const dz = z - b.z;
+    const lx = dx * b.c - dz * b.s; // into the box's own axes
+    const lz = dx * b.s + dz * b.c;
+    const qx = lx - THREE.MathUtils.clamp(lx, -b.hw, b.hw);
+    const qz = lz - THREE.MathUtils.clamp(lz, -b.hd, b.hd);
+    if (qx * qx + qz * qz < PLAYER_RADIUS * PLAYER_RADIUS) return true;
+  }
+  return false;
 }
 
 // 'desktop' (pointer lock + keyboard) or 'touch' (thumb stick + drag), picked on the start screen
@@ -1235,8 +1740,19 @@ function updateMovement(dt) {
   if (!blocked(pos.x, pos.z + move.z)) pos.z += move.z;
 }
 
+function inRoom(room, x, z) {
+  const p = toLocal(x, z, roomFrame(room));
+  if (room.shape === 'octagon') {
+    for (let k = 0; k < 8; k++) {
+      const a = (k * Math.PI) / 4;
+      if (p.x * Math.sin(a) - p.z * Math.cos(a) > room.apothem) return false;
+    }
+    return true;
+  }
+  return Math.abs(p.x) <= room.w / 2 && Math.abs(p.z) <= room.d / 2;
+}
 function roomAt(x, z) {
-  return ROOMS.find((r) => Math.abs(x - r.x) <= r.w / 2 && Math.abs(z - r.z) <= r.d / 2);
+  return ROOMS.find((r) => inRoom(r, x, z));
 }
 
 // ---------------------------------------------------------------- UI
@@ -1407,7 +1923,7 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'KeyE' && focused) openPanel(focused.userData.exhibit, focused.userData.room);
   if (e.code === 'KeyM') ui.minimap.classList.toggle('hidden');
   const n = Number(e.key);
-  if (n >= 1 && n <= ROOMS.length) teleportTo(ROOMS[n - 1]);
+  if (n >= 1 && n <= VISIT_ROOMS.length) teleportTo(VISIT_ROOMS[n - 1]);
 });
 document.addEventListener('keyup', (e) => keys.delete(e.code));
 document.addEventListener('mousedown', () => {
@@ -1526,11 +2042,21 @@ function updateRoomLabel() {
 }
 
 // ---------------------------------------------------------------- minimap
-const bounds = ROOMS.reduce(
-  (b, r) => ({
-    minX: Math.min(b.minX, r.x - r.w / 2), maxX: Math.max(b.maxX, r.x + r.w / 2),
-    minZ: Math.min(b.minZ, r.z - r.d / 2), maxZ: Math.max(b.maxZ, r.z + r.d / 2),
-  }),
+// each room's outline in world space: four corners, or eight for the rotunda
+function outline(room) {
+  const f = roomFrame(room);
+  if (room.shape === 'octagon') {
+    const r = room.apothem / Math.cos(Math.PI / 8);
+    return Array.from({ length: 8 }, (_, k) => {
+      const a = Math.PI / 8 + (k * Math.PI) / 4;
+      return toWorld(Math.sin(a) * r, -Math.cos(a) * r, f);
+    });
+  }
+  return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sz]) => toWorld((sx * room.w) / 2, (sz * room.d) / 2, f));
+}
+const OUTLINES = new Map(ROOMS.map((r) => [r, outline(r)]));
+const bounds = [...OUTLINES.values()].flat().reduce(
+  (b, p) => ({ minX: Math.min(b.minX, p.x), maxX: Math.max(b.maxX, p.x), minZ: Math.min(b.minZ, p.z), maxZ: Math.max(b.maxZ, p.z) }),
   { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity },
 );
 const mapCtx = ui.minimap.getContext('2d');
@@ -1546,20 +2072,28 @@ const toMap = (x, z) => [mapOffX + (x - bounds.minX) * mapScale, mapOffY + (z - 
 function drawMinimap() {
   const ctx = mapCtx;
   ctx.clearRect(0, 0, ui.minimap.width, ui.minimap.height);
-  ROOMS.forEach((r, i) => {
-    const [mx, my] = toMap(r.x - r.w / 2, r.z - r.d / 2);
+  for (const r of ROOMS) {
+    ctx.beginPath();
+    OUTLINES.get(r).forEach((p, k) => {
+      const [mx, my] = toMap(p.x, p.z);
+      if (k) ctx.lineTo(mx, my);
+      else ctx.moveTo(mx, my);
+    });
+    ctx.closePath();
     ctx.fillStyle = r === currentRoom ? 'rgba(217,164,65,0.45)' : 'rgba(255,255,255,0.12)';
-    ctx.fillRect(mx, my, r.w * mapScale, r.d * mapScale);
+    ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,0.6)';
     ctx.lineWidth = 1;
-    ctx.strokeRect(mx + 0.5, my + 0.5, r.w * mapScale - 1, r.d * mapScale - 1);
+    ctx.stroke();
+    const n = VISIT_ROOMS.indexOf(r);
+    if (n < 0) continue;
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
     ctx.font = '11px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const [cx, cy] = toMap(r.x, r.z);
-    ctx.fillText(String(i + 1), cx, cy);
-  });
+    ctx.fillText(String(n + 1), cx, cy);
+  }
   // player arrow
   const [px, py] = toMap(camera.position.x, camera.position.z);
   camera.getWorldDirection(forward);
@@ -1603,6 +2137,7 @@ window.museum = {
   camera,
   controls,
   music,
+  blocked, // blocked(x, z): would a visitor standing here hit something?
   rooms: ROOMS,
   teleport: (id) => teleportTo(ROOMS.find((r) => r.id === id) ?? ROOMS[0]),
 };
