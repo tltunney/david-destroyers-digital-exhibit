@@ -20,12 +20,20 @@
 //    ceiling   'wood' for a wood-slat ceiling (default is plain white)
 //    skylight  true to add a glowing skylight in the ceiling
 //    entrance  glass front doors with an EXIT sign on that wall, e.g. 'south'
+//    victorian true for the period look: gas-lamp sconces beside panels, a plaster cornice, mahogany trim
+//    wallpaper damask wallpaper color, e.g. '#5e1a1f'     wainscot  true for mahogany panelling below
+//
+//  THE ROTUNDA is an octagon (shape: 'octagon') sized by its `apothem` (center to wall).
+//    Things on its walls use `face` instead of `wall`: the compass bearing of that wall
+//    (0 = north, 90 = east, -90 = west). Gallery wings attach to it with
+//    attach: { to: 'rotunda', angle }, and get a doorway on their own south wall.
+//    Inside a wing, north is always the far end and south the doorway back to the rotunda.
 //    doors     { north|south|east|west: [{ at, width }] }
 //              `at` = how far the door is from the middle of that wall.
 //              You only need to put a door on ONE side; the room on the
 //              other side of the wall gets the matching opening automatically.
 //    exhibits  list of things to see (see EXHIBIT TYPES below)
-//    decor     benches, plants, and desks: [{ type, x, z, rotation }]
+//    decor     benches, settees, plants, and desks: [{ type, x, z, rotation }]
 //              x/z are relative to the room's center.
 //
 //  EXHIBIT TYPES
@@ -81,13 +89,13 @@ const empty = (wall, at, size = {}) => ({ type: 'painting', wall, at, ...size, i
 const emptyPlinth = (x, z) => ({ type: 'pedestal', x, z, model: '', shape: '', title: '', description: '' });
 
 export const ROOMS = [
-  // ------------------------------------------------------------- 1. LOBBY
+  // ------------------------------------------------------------- LOBBY (Victorian)
   {
     id: 'lobby',
     name: 'Lobby',
     x: 0, z: 0, w: 16, d: 14,
-    floor: 'wood', floorColor: '#c99f6e', wallColor: '#ebe5da', accent: '#a07a4c',
-    woodWall: 'north', ceiling: 'wood', entrance: 'south',
+    floor: 'wood', floorColor: '#a8774d', accent: '#a07a4c',
+    victorian: true, wallpaper: '#2e4a3c', wainscot: true, entrance: 'south',
     doors: { north: [{ at: 0, width: 5 }] },
     exhibits: [
       { type: 'panel', wall: 'west', at: 0, width: 3.4, height: 2.2, title: 'What Trying Costs', text: passage(PITCH) },
@@ -103,23 +111,32 @@ export const ROOMS = [
       { type: 'desk', x: -4, z: -3.5 },
       { type: 'plant', x: -6.8, z: -5.8 },
       { type: 'plant', x: 6.8, z: -5.8 },
-      { type: 'bench', x: -4.5, z: 3.5, rotation: 90 },
-      { type: 'bench', x: 4.5, z: 3.5, rotation: 90 },
+      { type: 'settee', x: -4.5, z: 3.5, rotation: 90 },
+      { type: 'settee', x: 4.5, z: 3.5, rotation: 90 },
     ],
   },
 
-  // --------------------------------------------------------- 2. MAIN HALL
+  // ------------------------------------------------------------- PASSAGE into the rotunda
   {
-    id: 'hall',
-    name: 'Main Hall',
-    x: 0, z: -19, w: 28, d: 24, height: 7, skylight: true,
-    floor: 'concrete', floorColor: '#c4beb3', wallColor: '#ebe5da', accent: '#c9a24a',
-    woodWall: 'north', ceiling: 'wood',
-    doors: {
-      west:  [{ at: 0, width: 4 }],
-      east:  [{ at: 0, width: 4 }],
-      north: [{ at: -7, width: 4 }, { at: 7, width: 4 }],
-    },
+    id: 'vestibule',
+    name: 'Rotunda',
+    passage: true, // not counted on the map or the number keys
+    x: 0, z: -8.5, w: 5, d: 3, height: 4.5,
+    floor: 'wood', floorColor: '#a8774d', accent: '#c9a24a',
+    victorian: true, wallpaper: '#5e1a1f', wainscot: true,
+    exhibits: [],
+  },
+
+  // ------------------------------------------------------------- ROTUNDA
+  {
+    id: 'rotunda',
+    name: 'Rotunda',
+    shape: 'octagon', apothem: 13.5,
+    x: 0, z: -23.5, height: 7.5,
+    accent: '#c9a24a',
+    victorian: true, wallpaper: '#5e1a1f', wainscot: true,
+    // the doorway to the lobby passage; the four gallery wings add their own doorways
+    openings: [{ angle: 180, width: 5, link: 'vestibule', label: 'Lobby' }],
     exhibits: [
       {
         type: 'pedestal', x: 0, z: 0, shape: 'bust', color: '#f1eee8', scale: 1.5,
@@ -127,41 +144,35 @@ export const ROOMS = [
         title: 'David Copperfield', subtitle: 'Narrator and hero of Charles Dickens\'s David Copperfield (1849–50)',
         description: 'Add your introduction to David here.',
       },
-      { type: 'panel', wall: 'north', at: 0, width: 9, height: 4.4, y: 4, title: 'Thesis', text: passage(THESIS) },
+      { type: 'panel', face: 0, at: 0, width: 7, height: 3.8, y: 3.7, title: 'Thesis', text: passage(THESIS) },
+      { type: 'panel', face: 90, at: 0, width: 3.4, height: 2.4, y: 2.6, title: 'The Big Idea', text: passage(PITCH) },
       {
-        type: 'panel', wall: 'south', at: -8, width: 3.4, height: 2.4,
+        type: 'panel', face: -90, at: 0, width: 3.4, height: 2.4, y: 2.6,
         title: 'The Galleries',
         text:
-          'West: 1. The Price Up Front\n' +
-          'East: 2. Ways to Pay\n' +
-          'North-west: 3. What Failure Takes\n' +
-          'North-east: 4. Same Price, Different Weight',
+          'Lower left: 1. The Price Up Front\n' +
+          'Upper left: 2. Ways to Pay\n' +
+          'Upper right: 3. What Failure Takes\n' +
+          'Lower right: 4. Same Price, Different Weight',
       },
-      { type: 'panel', wall: 'south', at: 8, width: 3.4, height: 2.4, title: 'The Big Idea', text: passage(PITCH) },
-      empty('west', -7), empty('west', 7),
-      empty('east', -7), empty('east', 7),
     ],
     decor: [
-      { type: 'bench', x: -5, z: 5 },
-      { type: 'bench', x: 5, z: 5 },
-      { type: 'bench', x: -5, z: -5 },
-      { type: 'bench', x: 5, z: -5 },
-      { type: 'plant', x: -12.8, z: -10.8 },
-      { type: 'plant', x: 12.8, z: -10.8 },
-      { type: 'plant', x: -12.8, z: 10.8 },
-      { type: 'plant', x: 12.8, z: 10.8 },
+      { type: 'settee', x: 0, z: -6.5 },
+      { type: 'settee', x: 6.5, z: 0, rotation: 90 },
+      { type: 'settee', x: -6.5, z: 0, rotation: 90 },
     ],
   },
 
-  // ---------------------------------------- 3. GALLERY 1 (WEST): THE PRICE UP FRONT
+  // ---------------------------------------- GALLERY 1 (lower left): THE PRICE UP FRONT
   {
     id: 'price',
     name: 'Gallery 1: The Price Up Front',
-    x: -24, z: -19, w: 20, d: 16,
-    floor: 'wood', floorColor: '#c29a6b', wallColor: '#ebe5da', accent: '#2f6fde', featureWall: 'west', ceiling: 'wood',
+    attach: { to: 'rotunda', angle: -135 },
+    w: 11, d: 16,
+    floor: 'wood', floorColor: '#c29a6b', wallColor: '#ebe5da', accent: '#2f6fde', featureWall: 'north', ceiling: 'wood',
     exhibits: [
       {
-        type: 'panel', wall: 'east', at: -5, width: 3.2, height: 2.2,
+        type: 'panel', wall: 'south', at: -3.8, width: 2.6, height: 2,
         title: 'The Price Up Front',
         text:
           passage(
@@ -170,23 +181,24 @@ export const ROOMS = [
             'Today: tuition, exam and licensing fees, unpaid internships.',
           ),
       },
-      empty('north', -5), empty('north', 4),
-      empty('west', 0, { width: 3.2, height: 2.2 }),
-      empty('south', -5), empty('south', 4),
-      emptyPlinth(-3, 0), emptyPlinth(3, 0),
+      empty('west', -4), empty('west', 3.5),
+      empty('east', -4), empty('east', 3.5),
+      empty('north', 0, { width: 3.2, height: 2.2 }),
+      emptyPlinth(-2, -3.5), emptyPlinth(2, -3.5),
     ],
-    decor: [{ type: 'bench', x: 0, z: 4 }],
+    decor: [{ type: 'bench', x: 0, z: 1.5 }],
   },
 
-  // ---------------------------------------- 4. GALLERY 2 (EAST): WAYS TO PAY
+  // ---------------------------------------- GALLERY 2 (upper left): WAYS TO PAY
   {
     id: 'ways',
     name: 'Gallery 2: Ways to Pay',
-    x: 24, z: -19, w: 20, d: 16,
-    floor: 'wood', floorColor: '#c29a6b', wallColor: '#ebe5da', accent: '#e4572e', featureWall: 'east', ceiling: 'wood',
+    attach: { to: 'rotunda', angle: -45 },
+    w: 11, d: 16,
+    floor: 'wood', floorColor: '#c29a6b', wallColor: '#ebe5da', accent: '#e4572e', featureWall: 'north', ceiling: 'wood',
     exhibits: [
       {
-        type: 'panel', wall: 'west', at: -5, width: 3.2, height: 2.4,
+        type: 'panel', wall: 'south', at: -3.8, width: 2.6, height: 2.2,
         title: 'Ways to Pay',
         text:
           passage(
@@ -196,23 +208,24 @@ export const ROOMS = [
             'Today: parents, loans, scholarships, working through school.',
           ),
       },
-      empty('north', -4), empty('north', 5),
-      empty('east', 0, { width: 3.2, height: 2.2 }),
-      empty('south', -4), empty('south', 5),
-      emptyPlinth(-3, 0), emptyPlinth(3, 0),
+      empty('west', -4), empty('west', 3.5),
+      empty('east', -4), empty('east', 3.5),
+      empty('north', 0, { width: 3.2, height: 2.2 }),
+      emptyPlinth(-2, -3.5), emptyPlinth(2, -3.5),
     ],
-    decor: [{ type: 'bench', x: 0, z: 4 }],
+    decor: [{ type: 'bench', x: 0, z: 1.5 }],
   },
 
-  // ---------------------------------------- 5. GALLERY 3 (NORTH-WEST): WHAT FAILURE TAKES
+  // ---------------------------------------- GALLERY 3 (upper right): WHAT FAILURE TAKES
   {
     id: 'failure',
     name: 'Gallery 3: What Failure Takes',
-    x: -7, z: -41, w: 14, d: 20,
+    attach: { to: 'rotunda', angle: 45 },
+    w: 11, d: 16,
     floor: 'wood', floorColor: '#c29a6b', wallColor: '#ebe5da', accent: '#1f9d6b', featureWall: 'north', ceiling: 'wood',
     exhibits: [
       {
-        type: 'panel', wall: 'south', at: -4.5, width: 2.6, height: 2,
+        type: 'panel', wall: 'south', at: -3.8, width: 2.6, height: 2,
         title: 'What Failure Takes',
         text:
           passage(
@@ -221,23 +234,24 @@ export const ROOMS = [
             'Today: the same missed payment, with or without savings or family behind it.',
           ),
       },
-      empty('west', -5, { width: 1.6, height: 2.2 }), empty('west', 3, { width: 1.6, height: 2.2 }),
-      empty('east', -5, { width: 1.6, height: 2.2 }), empty('east', 3, { width: 1.6, height: 2.2 }),
+      empty('west', -4, { width: 1.6, height: 2.2 }), empty('west', 3.5, { width: 1.6, height: 2.2 }),
+      empty('east', -4, { width: 1.6, height: 2.2 }), empty('east', 3.5, { width: 1.6, height: 2.2 }),
       empty('north', 0, { width: 3.5, height: 2.4 }),
-      emptyPlinth(0, -2),
+      emptyPlinth(0, -3),
     ],
-    decor: [{ type: 'bench', x: 0, z: 4 }],
+    decor: [{ type: 'bench', x: 0, z: 2 }],
   },
 
-  // ---------------------------------------- 6. GALLERY 4 (NORTH-EAST): SAME PRICE, DIFFERENT WEIGHT
+  // ---------------------------------------- GALLERY 4 (lower right): SAME PRICE, DIFFERENT WEIGHT
   {
     id: 'weight',
     name: 'Gallery 4: Same Price, Different Weight',
-    x: 7, z: -41, w: 14, d: 20,
+    attach: { to: 'rotunda', angle: 135 },
+    w: 11, d: 16,
     floor: 'wood', floorColor: '#c29a6b', wallColor: '#ebe5da', accent: '#7b5cf0', featureWall: 'north', ceiling: 'wood',
     exhibits: [
       {
-        type: 'panel', wall: 'south', at: -4.5, width: 2.6, height: 2.2,
+        type: 'panel', wall: 'south', at: -3.8, width: 2.6, height: 2.2,
         title: 'Same Price, Different Weight',
         text:
           passage(
@@ -248,7 +262,7 @@ export const ROOMS = [
           ),
       },
       {
-        type: 'panel', wall: 'south', at: 4.5, width: 2.6, height: 2.2,
+        type: 'panel', wall: 'south', at: 3.8, width: 2.6, height: 2.2,
         title: 'Objections',
         text:
           passage(
@@ -258,11 +272,11 @@ export const ROOMS = [
             '"Today there are loans, bankruptcy, and aid." Those tools only help if you understand them.',
           ),
       },
-      empty('west', -5), empty('west', 3),
-      empty('east', -5), empty('east', 3),
+      empty('west', -4), empty('west', 3.5),
+      empty('east', -4), empty('east', 3.5),
       empty('north', 0, { width: 3.5, height: 2.4 }),
-      emptyPlinth(0, -2),
+      emptyPlinth(0, -3),
     ],
-    decor: [{ type: 'bench', x: 0, z: 4 }],
+    decor: [{ type: 'bench', x: 0, z: 2 }],
   },
 ];

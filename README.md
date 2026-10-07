@@ -3,20 +3,20 @@
 A 3D walk-through museum that runs in the web browser, built with [Three.js](https://threejs.org/).
 
 **Thesis (short version):** Debt doesn't decide who succeeds. It decides what trying costs, how you have to pay,
-and what failing takes from you. The full thesis hangs in the Main Hall, next to a bust of David Copperfield.
+and what failing takes from you. The full thesis hangs in the domed Rotunda, behind a marble bust of David Copperfield.
 
 ```
-                ┌────────────────┬────────────────┐
-                │   Gallery 3    │   Gallery 4    │
-                │  What Failure  │  Same Price,   │
-                │     Takes      │Different Weight│
-   ┌────────────┴───┬────────────┴───┬────────────┴───┐
-   │   Gallery 1    │   Main Hall    │   Gallery 2    │
-   │ The Price Up   │ thesis + bust  │  Ways to Pay   │
-   │     Front      │                │                │
-   └────────────────┴───┬────────┬───┴────────────────┘
-                        │ Lobby  │
-                        └────────┘
+       2. Ways to Pay           3. What Failure Takes
+               \                       /
+                \    ┌───────────┐    /
+                 ╲──┤  ROTUNDA  ├──╱
+                    │  bust under│
+                    │  the dome  │
+                 ╱──┤           ├──╲
+                /    └─────┬─────┘    \
+               /           │           \
+   1. The Price Up Front   │    4. Same Price, Different Weight
+                         Lobby
 ```
 
 Each gallery has an intro panel with its part of the thesis. Its picture frames and plinths are **empty slots**
@@ -43,7 +43,7 @@ Three.js is included in `lib/three/`, so the museum works with no internet conne
 | Mouse | Look around |
 | Shift | Walk faster |
 | E or click | Open the exhibit you're looking at |
-| 1–6 | Jump to a room (numbers match the minimap) |
+| 1–6 | Jump to a room (numbers match the minimap: 1 Lobby, 2 Rotunda, 3–6 Galleries 1–4) |
 | M | Show or hide the minimap |
 | N | Music on/off |
 | Esc | Pause |
