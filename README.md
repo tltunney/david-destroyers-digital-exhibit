@@ -3,15 +3,15 @@
 A 3D walk-through museum that runs in the web browser, built with [Three.js](https://threejs.org/).
 
 **Thesis (short version):** Debt doesn't decide who succeeds. It decides what trying costs, how you have to pay,
-and what failing takes from you. The full thesis hangs in the domed Rotunda, behind a marble bust of David Copperfield.
+and what failing takes from you. The full thesis hangs in the domed Rotunda, behind a full-length marble statue of David Copperfield.
 
 ```
        2. Ways to Pay           3. What Failure Takes
                \                       /
                 \    ┌───────────┐    /
                  ╲──┤  ROTUNDA  ├──╱
-                    │  bust under│
-                    │  the dome  │
+                    │  statue   │
+                    │ under dome│
                  ╱──┤           ├──╲
                 /    └─────┬─────┘    \
                /           │           \
@@ -68,7 +68,10 @@ To play your own royalty-free track instead, set `music.file` in `js/config.js`.
 - **Colors and floors**: `wallColor`, `floorColor`, `accent`, and `floor` (`concrete`, `wood`, `marble`, `tile`, `carpet`).
   `featureWall: 'north'` paints one wall in the room's accent color, `woodWall: 'north'` covers a wall in light wood slats,
   `ceiling: 'wood'` gives a wood-slat ceiling, and `skylight: true` adds a glowing ceiling skylight.
-- **The bust**: the Main Hall centerpiece uses `shape: 'bust'`, a marble bust built from simple shapes.
+- **The statue**: the Rotunda centerpiece is `assets/models/copperfield.glb`, a full-length David in a frock coat
+  holding a book and his top hat, on a monument plinth (`plinth: { width, height, inscription }`). It is sculpted in
+  code: edit the pose or costume in `tools/statue/make-statue.mjs`, run `node tools/statue/make-statue.mjs`, and check
+  it in `tools/statue/preview.html`. If the model can't load, the older bust (`shape: 'bust'`) shows instead.
   Pedestals also take `spin`, `facing`, and `spotlight`.
 
 Remember to cite your image sources in each exhibit's description.

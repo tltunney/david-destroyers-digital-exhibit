@@ -912,7 +912,7 @@ function makeInteractive(meshes, exhibit, room) {
 function buildPainting(room, ex) {
   const w = ex.width ?? 2.4;
   const h = ex.height ?? 1.7;
-  const y = ex.y ?? 2.2;
+  const y = clearOfWainscot(room, ex.y ?? 2.2, h + 0.4);
   const group = new THREE.Group();
 
   // beveled oak frame around a white mat, gallery style
@@ -937,6 +937,11 @@ function buildPainting(room, ex) {
   makeInteractive([frame, mat, art, label], ex, room);
 }
 
+// In rooms with wainscot, lift anything on the wall so its bottom clears the chair rail.
+function clearOfWainscot(room, y, h) {
+  return room.wainscot ? Math.max(y, WAINSCOT_H + 0.25 + h / 2) : y;
+}
+
 function buildPanel(room, ex) {
   const w = ex.width ?? 2.4;
   const h = ex.height ?? 1.6;
@@ -948,9 +953,10 @@ function buildPanel(room, ex) {
   panel.position.z = 0.045; // stands off the wall on hidden spacers
   group.add(panel);
   addWallLighting(group, w, h, w + 1, !room.victorian);
-  mountOnWall(room, ex, group, ex.y ?? 1.9);
+  const y = clearOfWainscot(room, ex.y ?? 1.9, h);
+  mountOnWall(room, ex, group, y);
   if (room.victorian && ex.sconces !== false) {
-    for (const sgn of [-1, 1]) addSconce(room, ex.wall, (ex.at ?? 0) + sgn * (w / 2 + 0.6), Math.max(2.4, (ex.y ?? 1.9) + 0.4));
+    for (const sgn of [-1, 1]) addSconce(room, ex.wall, (ex.at ?? 0) + sgn * (w / 2 + 0.6), Math.max(2.4, y + 0.4));
   }
   makeInteractive([panel], { ...ex, description: ex.description || ex.text || 'Text coming soon.' }, room);
 }
@@ -1160,13 +1166,20 @@ function buildPedestal(room, ex) {
   const scale = ex.scale ?? 1;
   const px = room.x + (ex.x ?? 0);
   const pz = room.z + (ex.z ?? 0);
-  const baseW = 0.9 * scale;
-  const baseH = 1.1;
+  const baseW = ex.plinth?.width ?? 0.9 * scale;
+  const baseH = ex.plinth?.height ?? 1.1;
+  // objects are modeled facing south (+z); FACING is for the camera, which starts out facing north
+  const turn = (FACING[ex.facing ?? 'south'] ?? 0) + Math.PI;
 
-  const base = addBox(baseW, baseH, baseW, MAT.pedestal, px, baseH / 2, pz, true);
-  const cap = addBox(baseW + 0.1, 0.06, baseW + 0.1, MAT.oak, px, baseH + 0.03, pz);
-  base.castShadow = base.receiveShadow = cap.castShadow = cap.receiveShadow = true;
-  room.footprints.push({ x: px, z: pz, w: baseW, d: baseW });
+  let stand;
+  if (ex.plinth) stand = buildMonumentPlinth(room, px, pz, baseW, baseH, turn, ex.plinth.inscription);
+  else {
+    const base = addBox(baseW, baseH, baseW, MAT.pedestal, px, baseH / 2, pz, true);
+    const cap = addBox(baseW + 0.1, 0.06, baseW + 0.1, MAT.oak, px, baseH + 0.03, pz);
+    base.castShadow = base.receiveShadow = cap.castShadow = cap.receiveShadow = true;
+    room.footprints.push({ x: px, z: pz, w: baseW, d: baseW });
+    stand = [base, cap];
+  }
   if (ex.rope) buildRopeBarrier(room, px, pz, baseW + 1.6);
   else {
     const note = piece(parent, new THREE.PlaneGeometry(0.46, 0.08), new THREE.MeshBasicMaterial({ map: plaqueTexture('PLEASE DO NOT TOUCH') }), px, 0.97, pz + baseW / 2 + 0.004);
@@ -1180,13 +1193,14 @@ function buildPedestal(room, ex) {
   // invisible box so the whole object area is easy to click
   const hitbox = new THREE.Mesh(new THREE.BoxGeometry(baseW, scale, baseW), new THREE.MeshBasicMaterial({ visible: false }));
   holder.add(hitbox);
-  makeInteractive([base, cap, hitbox], ex, room);
+  makeInteractive([...stand, hitbox], ex, room);
 
   if (ex.model) {
     gltfLoader.load(
       ex.model,
       (gltf) => {
         const model = gltf.scene;
+        if (ex.material === 'marble') carveInMarble(model, ex.color);
         const box = new THREE.Box3().setFromObject(model);
         const size = box.getSize(new THREE.Vector3());
         const fit = scale / Math.max(size.x, size.y, size.z);
@@ -1209,11 +1223,11 @@ function buildPedestal(room, ex) {
     holder.add(shape);
   } // no shape or model: an empty plinth waiting for its exhibit
   if (ex.spin !== false) spinners.push(holder);
-  // objects are modeled facing south (+z); FACING is for the camera, which starts out facing north
-  holder.rotation.y = (FACING[ex.facing ?? 'south'] ?? 0) + Math.PI;
+  holder.rotation.y = turn;
 
   if (ex.spotlight) {
-    const spot = new THREE.SpotLight(0xfff3e2, 45, 14, 0.35, 0.6, 1);
+    // a statue on a tall plinth needs a wider beam to light it head to foot
+    const spot = new THREE.SpotLight(0xfff3e2, 45, 14, ex.plinth ? 0.45 : 0.35, 0.6, 1);
     spot.position.set(px, room.height - 0.3, pz + 3);
     spot.target = holder;
     spot.castShadow = true;
@@ -1224,6 +1238,53 @@ function buildPedestal(room, ex) {
     spot.shadow.camera.far = 15;
     parent.add(spot);
   }
+}
+
+// A monument plinth for a full-length statue: a cream marble step and moldings around a darker
+// veined marble die, with a bronze name plaque on the front. Its top is at height + 0.06.
+function buildMonumentPlinth(room, px, pz, w, h, turn, inscription) {
+  const light = new THREE.MeshStandardMaterial({ ...surfaceMaps('marble', '#e9e2d5', w, 0.5), roughness: 1 });
+  const dark = new THREE.MeshStandardMaterial({ ...surfaceMaps('marble', '#6b5d53', w, h), roughness: 1 });
+  const parts = [
+    addBox(w + 0.34, 0.18, w + 0.34, light, px, 0.09, pz, true), // step
+    addBox(w + 0.14, 0.1, w + 0.14, light, px, 0.23, pz), // base molding
+    addBox(w, h - 0.42, w, dark, px, 0.28 + (h - 0.42) / 2, pz), // die
+    addBox(w + 0.14, 0.14, w + 0.14, light, px, h - 0.07, pz), // top molding
+    addBox(w + 0.22, 0.06, w + 0.22, light, px, h + 0.03, pz), // cap
+  ];
+  for (const m of parts) m.castShadow = m.receiveShadow = true;
+  room.footprints.push({ x: px, z: pz, w: w + 0.34, d: w + 0.34 });
+  if (inscription) {
+    const plate = piece(parent, new THREE.PlaneGeometry(w * 0.82, w * 0.82 * (104 / 512)), new THREE.MeshBasicMaterial({ map: plaqueTexture(inscription) }));
+    const out = w / 2 + 0.004;
+    plate.position.set(px + Math.sin(turn) * out, 0.28 + (h - 0.42) * 0.6, pz + Math.cos(turn) * out);
+    plate.rotation.y = turn;
+    plate.material.polygonOffset = true;
+    plate.material.polygonOffsetFactor = -1;
+    parts.push(plate);
+  }
+  return parts;
+}
+
+// Gives a loaded model a white marble surface. Models made by tools/statue have no texture
+// coordinates, so they are projected from the side at a slant (no seams to hide).
+function carveInMarble(model, color = '#f1eee8') {
+  const material = new THREE.MeshStandardMaterial({ ...surfaceMaps('marble', color, 1.5, 1.5), roughness: 1, normalScale: new THREE.Vector2(0.4, 0.4) });
+  model.updateMatrixWorld(true);
+  const p = new THREE.Vector3();
+  model.traverse((mesh) => {
+    if (!mesh.isMesh) return;
+    const pos = mesh.geometry.attributes.position;
+    const uv = new Float32Array(pos.count * 2);
+    for (let i = 0; i < pos.count; i++) {
+      p.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrixWorld);
+      uv[i * 2] = p.x + p.z * 0.7;
+      uv[i * 2 + 1] = p.y;
+    }
+    mesh.geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    mesh.material = material;
+    mesh.castShadow = mesh.receiveShadow = true;
+  });
 }
 
 // Brass posts with a sagging velvet rope, in a square around an object.
