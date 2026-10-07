@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>David Destroyers Digital Exhibit</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="css/style.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./lib/three/build/three.module.js",
+        "three/addons/": "./lib/three/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+
+  <!-- HUD -->
+  <div id="crosshair"></div>
+  <div id="room-label"></div>
+  <div id="prompt" class="hidden"></div>
+  <canvas id="minimap" width="220" height="220"></canvas>
+
+  <!-- Start / pause screen -->
+  <div id="overlay">
+    <div class="card">
+      <h1 id="museum-title"></h1>
+      <p id="museum-subtitle"></p>
+      <button id="enter-btn">Click to enter</button>
+      <ul class="controls">
+        <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</li>
+        <li><kbd>Mouse</kbd> look around</li>
+        <li><kbd>Shift</kbd> walk faster</li>
+        <li><kbd>E</kbd> or <kbd>Click</kbd> view an exhibit</li>
+        <li><kbd>1</kbd>–<kbd>9</kbd> jump to a room</li>
+        <li><kbd>M</kbd> toggle map</li>
+        <li><kbd>Esc</kbd> pause</li>
+      </ul>
+      <p id="credits"></p>
+    </div>
+  </div>
+
+  <!-- Exhibit detail panel -->
+  <div id="info-panel" class="hidden" role="dialog" aria-modal="true">
+    <div class="card">
+      <button id="info-close" aria-label="Close">&times;</button>
+      <p id="info-room"></p>
+      <h2 id="info-title"></h2>
+      <p id="info-subtitle"></p>
+      <img id="info-image" alt="" />
+      <div id="info-body"></div>
+      <a id="info-link" target="_blank" rel="noopener"></a>
+      <p class="hint">Press <kbd>E</kbd> or <kbd>Esc</kbd> to return to the museum</p>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
