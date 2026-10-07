@@ -49,6 +49,8 @@
 //    pedestal  3D object on a stand
 //              { type:'pedestal', x, z, shape:'bust'|'torusKnot'|'icosahedron'|'sphere'|'box'|'cone'|'torus',
 //                color, model:'assets/models/thing.glb', scale, spin, facing, spotlight, rope, title, description }
+//              `plinth: { width, height, inscription }` stands it on a tall marble monument plinth, and
+//              `material: 'marble'` gives a model a marble surface.
 //              `rope: true` puts brass posts and a velvet rope around it.
 //    case      glass display case on a mahogany cabinet
 //              { type:'case', x, z, rotation, title, subtitle, description, image }
@@ -152,7 +154,9 @@ export const ROOMS = [
     openings: [{ angle: 180, width: 5, link: 'vestibule', label: 'Lobby' }],
     exhibits: [
       {
-        type: 'pedestal', x: 0, z: 0, shape: 'bust', color: '#f1eee8', scale: 1.5,
+        // full-length marble statue (made by tools/statue/make-statue.mjs); the old bust is the fallback
+        type: 'pedestal', x: 0, z: 0, model: 'assets/models/copperfield.glb', material: 'marble', shape: 'bust',
+        color: '#f1eee8', scale: 2.4, plinth: { width: 1.5, height: 1.45, inscription: 'DAVID COPPERFIELD' },
         spin: false, facing: 'south', spotlight: true, rope: true,
         title: 'David Copperfield', subtitle: 'Narrator and hero of Charles Dickens\'s David Copperfield (1849–50)',
         description: 'Add your introduction to David here.',

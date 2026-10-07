@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Statue Preview</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #2a2622; }
+    canvas { display: block; }
+  </style>
+  <script type="importmap">
+    { "imports": { "three": "../../lib/three/build/three.module.js", "three/addons/": "../../lib/three/examples/jsm/" } }
+  </script>
+</head>
+<body>
+  <!-- Preview of assets/models/copperfield.glb. Add #angle=0.6&zoom=1 to the URL to turn the view. -->
+  <script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+    const params = new URLSearchParams(location.hash.slice(1));
+    const angle = Number(params.get('angle') ?? 0.35);
+    const zoom = Number(params.get('zoom') ?? 1);
+    const focusY = Number(params.get('y') ?? 0.95);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.toneMapping = THREE.AgXToneMapping;
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x3a2a26);
+    scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+    scene.environmentIntensity = 0.5;
+    const key = new THREE.SpotLight(0xfff3e2, 40, 20, 0.5, 0.6, 1);
+    key.position.set(1.2, 4, 3);
+    key.castShadow = true;
+    scene.add(key, new THREE.HemisphereLight(0xfff6ea, 0x4a3f35, 0.5));
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), new THREE.MeshStandardMaterial({ color: 0x8a7f72 }));
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    const camera = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.05, 50);
+    const dist = 4.2 / zoom;
+    camera.position.set(Math.sin(angle) * dist, focusY + 0.15, Math.cos(angle) * dist);
+    camera.lookAt(0, focusY, 0);
+
+    new GLTFLoader().load('../../assets/models/copperfield.glb', (gltf) => {
+      gltf.scene.traverse((m) => {
+        if (m.isMesh) {
+          m.castShadow = m.receiveShadow = true;
+          m.material = new THREE.MeshStandardMaterial({ color: 0xefebe4, roughness: 0.35 });
+        }
+      });
+      scene.add(gltf.scene);
+      renderer.render(scene, camera);
+      window.ready = true;
+    });
+  </script>
+</body>
+</html>
