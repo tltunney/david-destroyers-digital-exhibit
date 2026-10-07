@@ -636,6 +636,7 @@ function buildRoom(room) {
   buildCeilingLights(room);
   buildTracks(room);
   if (room.entrance) buildEntrance(room, room.entrance);
+  if (!room.passage && room.fixtures !== false) buildFixtures(room);
 
   for (const ex of room.exhibits ?? []) {
     if (ex.type === 'painting') buildPainting(room, ex);
@@ -879,16 +880,7 @@ function buildEntrance(room, side) {
     group.add(handle);
   }
   // EXIT sign
-  const exitTex = canvasTexture(256, 96, (ctx, w, h) => {
-    ctx.fillStyle = '#0b8a3e';
-    ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = '#f2fff4';
-    ctx.font = `bold 64px ${FONT}`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('EXIT', w / 2, h / 2 + 3);
-  });
-  const exit = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.26, 0.06), [MAT.trim, MAT.trim, MAT.trim, MAT.trim, new THREE.MeshBasicMaterial({ map: exitTex, color: new THREE.Color(1.6, 1.6, 1.6) }), MAT.trim]);
+  const exit = exitSign();
   exit.position.set(0, H + 0.45, 0.04);
   group.add(exit);
   mountOnWall(room, { wall: side, at: 0 }, group, 0);
@@ -1176,6 +1168,11 @@ function buildPedestal(room, ex) {
   base.castShadow = base.receiveShadow = cap.castShadow = cap.receiveShadow = true;
   room.footprints.push({ x: px, z: pz, w: baseW, d: baseW });
   if (ex.rope) buildRopeBarrier(room, px, pz, baseW + 1.6);
+  else {
+    const note = piece(parent, new THREE.PlaneGeometry(0.46, 0.08), new THREE.MeshBasicMaterial({ map: plaqueTexture('PLEASE DO NOT TOUCH') }), px, 0.97, pz + baseW / 2 + 0.004);
+    note.material.polygonOffset = true;
+    note.material.polygonOffsetFactor = -1;
+  }
   const holder = new THREE.Group();
   holder.position.set(px, baseH + 0.06 + 0.5 * scale, pz);
   parent.add(holder);
@@ -1553,10 +1550,177 @@ function buildCase(room, ex) {
   room.footprints.push({ x, z, w: 1.58, d: 0.83, rot });
 }
 
+// Monstera: big split leaves on arching stems, in a low pot. Quieter than a palm.
+const MONSTERA_LEAF = (() => {
+  const tex = canvasTexture(256, 256, (ctx, w, h) => {
+    const cx = w / 2;
+    // heart-shaped leaf, stem end at the bottom
+    ctx.fillStyle = '#2f5e34';
+    ctx.beginPath();
+    ctx.moveTo(cx, h * 0.9);
+    ctx.bezierCurveTo(cx - w * 0.55, h * 0.95, cx - w * 0.5, h * 0.12, cx, h * 0.06);
+    ctx.bezierCurveTo(cx + w * 0.5, h * 0.12, cx + w * 0.55, h * 0.95, cx, h * 0.9);
+    ctx.fill();
+    // a lighter sheen toward the middle
+    const g = ctx.createRadialGradient(cx, h * 0.45, 4, cx, h * 0.45, w * 0.45);
+    g.addColorStop(0, 'rgba(120,170,100,0.35)');
+    g.addColorStop(1, 'rgba(120,170,100,0)');
+    ctx.fillStyle = g;
+    ctx.fill();
+    // midrib and side veins
+    ctx.strokeStyle = 'rgba(190,215,160,0.55)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(cx, h * 0.9);
+    ctx.lineTo(cx, h * 0.1);
+    ctx.stroke();
+    // cut the slits and holes that give the monstera its look
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.lineCap = 'round';
+    for (let k = 0; k < 6; k++) {
+      const y = h * (0.2 + k * 0.12);
+      for (const sx of [-1, 1]) {
+        ctx.lineWidth = 7;
+        ctx.beginPath();
+        ctx.moveTo(cx + sx * w * 0.5, y - 10);
+        ctx.lineTo(cx + sx * w * 0.16, y + 8);
+        ctx.stroke();
+        if (k > 0 && k < 5) {
+          ctx.beginPath();
+          ctx.ellipse(cx + sx * w * 0.1, y + 2, 4, 9, sx * 0.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  });
+  return new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.55 });
+})();
+function buildMonstera(g, seed) {
+  const pot = [[0, 0], [0.2, 0], [0.24, 0.04], [0.27, 0.38], [0.29, 0.42], [0, 0.42]].map(([r, y]) => new THREE.Vector2(r, y));
+  piece(g, new THREE.LatheGeometry(pot, 32), MAT.ceramic);
+  piece(g, new THREE.CircleGeometry(0.26, 24).rotateX(-Math.PI / 2), MAT.trunk, 0, 0.4, 0);
+  const r = seededRandom(seed);
+  const leafGeo = new THREE.PlaneGeometry(0.72, 0.72).translate(0, 0.33, 0); // pivot at the stem end
+  for (let k = 0; k < 11; k++) {
+    const angle = (k / 11) * Math.PI * 2 + r() * 0.5;
+    const lean = 0.25 + r() * 0.45; // how far the stem leans out
+    const len = 0.55 + r() * 0.45;
+    const stem = new THREE.Group();
+    stem.position.y = 0.4;
+    stem.rotation.set(lean, angle, 0, 'YXZ');
+    piece(stem, new THREE.CylinderGeometry(0.008, 0.012, len, 6).translate(0, len / 2, 0), MAT.palm);
+    const leaf = piece(stem, leafGeo, MONSTERA_LEAF, 0, len, 0);
+    leaf.rotation.set(0.35 + r() * 0.4, 0, (r() - 0.5) * 0.6); // leaves held up and outward, facing the viewer
+    g.add(stem);
+  }
+  return [0.75, 0.75];
+}
+
+// Green EXIT sign (shared texture).
+let EXIT_TEX = null;
+function exitSign() {
+  EXIT_TEX ??= canvasTexture(256, 96, (ctx, w, h) => {
+    ctx.fillStyle = '#0b8a3e';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#f2fff4';
+    ctx.font = `bold 64px ${FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('EXIT', w / 2, h / 2 + 3);
+  });
+  return new THREE.Mesh(
+    new THREE.BoxGeometry(0.7, 0.26, 0.06),
+    [MAT.trim, MAT.trim, MAT.trim, MAT.trim, new THREE.MeshBasicMaterial({ map: EXIT_TEX, color: new THREE.Color(1.6, 1.6, 1.6) }), MAT.trim],
+  );
+}
+
+// Things every real museum has that nobody notices until they're missing.
+const FIXTURE_MAT = {
+  white: new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.5 }),
+  red: new THREE.MeshStandardMaterial({ color: 0xb3201e, roughness: 0.35 }),
+  dome: new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.05, metalness: 0.5, transparent: true, opacity: 0.85 }),
+  screen: new THREE.MeshBasicMaterial({ color: new THREE.Color(0.35, 0.9, 0.55) }),
+};
+function buildFixtures(room) {
+  const { x, z, w, d, height } = room;
+  // ceiling: smoke detectors and a security camera dome in one corner
+  for (const t of [-0.25, 0.25]) {
+    const sx = x + (w >= d ? w * t : 0);
+    const sz = z + (w >= d ? 0 : d * t);
+    piece(parent, new THREE.CylinderGeometry(0.075, 0.08, 0.04, 20), FIXTURE_MAT.white, sx + 0.6, height - 0.02, sz + 0.6);
+  }
+  const cam = new THREE.Group();
+  cam.position.set(x + w / 2 - 0.8, height, z - d / 2 + 0.8);
+  piece(cam, new THREE.CylinderGeometry(0.12, 0.12, 0.04, 24), FIXTURE_MAT.white, 0, -0.02, 0);
+  piece(cam, new THREE.SphereGeometry(0.1, 20, 10, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), FIXTURE_MAT.dome, 0, -0.04, 0);
+  parent.add(cam);
+  if (room.victorian) return; // period rooms keep their walls clear
+
+  const door = room.doors.south[0];
+  // EXIT sign above the doorway, inside the room
+  if (door) {
+    const exit = exitSign();
+    mountOnWall(room, { wall: 'south', at: door.at }, exit, Math.min(height - 0.35, DOOR_HEIGHT + 1.05));
+  }
+  // fire extinguisher in a recessed white cabinet, near the doorway end of the east wall
+  const ext = new THREE.Group();
+  piece(ext, new THREE.BoxGeometry(0.42, 0.75, 0.14), FIXTURE_MAT.white, 0, 0, 0.07);
+  piece(ext, new THREE.BoxGeometry(0.36, 0.69, 0.02), MAT.trim, 0, 0, 0.13);
+  piece(ext, new THREE.CylinderGeometry(0.075, 0.075, 0.42, 16), FIXTURE_MAT.red, 0, -0.08, 0.15);
+  piece(ext, new THREE.CylinderGeometry(0.03, 0.04, 0.08, 10), MAT.trim, 0, 0.17, 0.15);
+  const glass = piece(ext, new THREE.PlaneGeometry(0.36, 0.69), MAT.caseGlass, 0, 0, 0.145);
+  glass.renderOrder = 1;
+  mountOnWall(room, { wall: 'east', at: d / 2 - 1.1 }, ext, 1.15);
+  // climate monitor (temperature and humidity) on the west wall
+  const monitor = new THREE.Group();
+  piece(monitor, new THREE.BoxGeometry(0.16, 0.11, 0.035), FIXTURE_MAT.white, 0, 0, 0.018);
+  piece(monitor, new THREE.PlaneGeometry(0.11, 0.05), FIXTURE_MAT.screen, 0, 0.012, 0.037);
+  mountOnWall(room, { wall: 'west', at: d / 2 - 1.2 }, monitor, 1.55);
+  // the guard's chair against the west wall near the doorway, facing into the room
+  const chair = new THREE.Group();
+  const cx = x - w / 2 + 0.55;
+  const cz = z + d / 2 - 2;
+  chair.position.set(cx, 0, cz);
+  chair.rotation.y = Math.PI / 2;
+  piece(chair, new THREE.BoxGeometry(0.45, 0.05, 0.42), MAT.trim, 0, 0.46, 0);
+  piece(chair, new THREE.BoxGeometry(0.45, 0.42, 0.04), MAT.trim, 0, 0.72, -0.2);
+  const leg = new THREE.CylinderGeometry(0.015, 0.015, 0.46, 8);
+  for (const [lx, lz] of [[-0.2, -0.18], [0.2, -0.18], [-0.2, 0.18], [0.2, 0.18]]) piece(chair, leg, MAT.metal, lx, 0.23, lz);
+  chair.traverse((m) => m.isMesh && (m.castShadow = true));
+  parent.add(chair);
+  addCollider(cx, cz, 0.5, 0.5, Math.PI / 2);
+  room.footprints.push({ x: cx, z: cz, w: 0.5, d: 0.5, rot: Math.PI / 2 });
+  // a low rope keeps visitors a step back from the large work on the far wall
+  if ((room.exhibits ?? []).some((ex) => ex.wall === 'north' && ex.type === 'painting')) {
+    buildStanchionLine(room, [[-2.1, -d / 2 + 1.3], [2.1, -d / 2 + 1.3]]);
+  }
+}
+
+// Brochure rack: a slanted mahogany stand with three tiers of colorful pamphlets.
+function buildBrochureRack(g) {
+  piece(g, new THREE.BoxGeometry(0.6, 1.1, 0.05), MAT.mahogany, 0, 0.75, -0.1).rotation.x = -0.15;
+  for (const [lx, lz] of [[-0.25, 0.12], [0.25, 0.12], [-0.25, -0.12], [0.25, -0.12]]) piece(g, new THREE.CylinderGeometry(0.015, 0.015, 0.3, 8), MAT.gilt, lx, 0.15, lz);
+  piece(g, new THREE.BoxGeometry(0.6, 0.04, 0.3), MAT.mahogany, 0, 0.3, 0);
+  const colors = [0x2f6fde, 0xe4572e, 0x1f9d6b, 0x7b5cf0, 0xc9a24a, 0x8a3b2a];
+  let n = 0;
+  for (let tier = 0; tier < 3; tier++) {
+    const y = 0.45 + tier * 0.32;
+    piece(g, new THREE.BoxGeometry(0.58, 0.02, 0.08), MAT.gilt, 0, y - 0.1, -0.01 - tier * 0.05);
+    for (const sx of [-0.15, 0.15]) {
+      const b = piece(g, new THREE.BoxGeometry(0.2, 0.26, 0.012), new THREE.MeshStandardMaterial({ color: colors[n++ % colors.length], roughness: 0.6 }), sx, y + 0.03, -0.02 - tier * 0.05);
+      b.rotation.x = -0.15;
+    }
+  }
+  return [0.62, 0.35];
+}
+
 const FURNITURE = {
   admissions: buildAdmissionsDesk,
   clock: buildClock,
   palm: (g, room, item) => buildPalm(g, `palm${item.x},${item.z}`),
+  monstera: (g, room, item) => buildMonstera(g, `monstera${item.x},${item.z}`),
+  brochures: buildBrochureRack,
   coatstand: buildCoatStand,
   guide: buildGuideEasel,
   donations: buildDonationBox,
@@ -1613,7 +1777,7 @@ function buildDecor(room, item) {
     }
   } else if (FURNITURE[item.type]) {
     size = FURNITURE[item.type](group, room, item);
-    round = item.type === 'palm';
+    round = item.type === 'palm' || item.type === 'monstera';
   } else if (item.type === 'desk') {
     size = [3.2, 1];
     const desk = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.05, 1), room.victorian ? MAT.mahogany : MAT.oak);

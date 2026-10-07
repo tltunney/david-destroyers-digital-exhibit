@@ -20,6 +20,7 @@
 //    ceiling   'wood' for a wood-slat ceiling (default is plain white)
 //    skylight  true to add a glowing skylight in the ceiling
 //    entrance  glass front doors with an EXIT sign on that wall, e.g. 'south'
+//    fixtures  false to leave out the guard chair, EXIT sign, extinguisher, smoke detectors, and camera
 //    victorian true for the period look: gas-lamp sconces beside panels, a plaster cornice, mahogany trim
 //    wallpaper damask wallpaper color, e.g. '#5e1a1f'     wainscot  true for mahogany panelling below
 //
@@ -34,8 +35,8 @@
 //              other side of the wall gets the matching opening automatically.
 //    exhibits  list of things to see (see EXHIBIT TYPES below)
 //    decor     furniture: [{ type, x, z, rotation }]  (rotation in degrees; the front faces south at 0)
-//              types: bench, settee, plant, palm, admissions (desk), clock, coatstand, guide (map easel),
-//              donations, and stanchions: { type:'stanchions', points:[[x, z], [x, z], ...] } (a rope line)
+//              types: bench, settee, plant, palm, monstera, admissions (desk), clock, coatstand, guide (map easel),
+//              donations, brochures, and stanchions: { type:'stanchions', points:[[x, z], [x, z], ...] } (a rope line)
 //              x/z are relative to the room's center.
 //
 //  EXHIBIT TYPES
@@ -114,11 +115,12 @@ export const ROOMS = [
     decor: [
       { type: 'admissions', x: -4.6, z: -3.6 },
       { type: 'stanchions', points: [[-6.2, -1.9], [-6.2, 0.6]] },
+      { type: 'brochures', x: -1.9, z: -4.4 },
       { type: 'stanchions', points: [[-3, -1.9], [-3, 0.6]] },
       { type: 'clock', x: 7.5, z: -5, rotation: -90 },
-      { type: 'palm', x: -3.6, z: -6.2 },
-      { type: 'palm', x: 3.6, z: -6.2 },
-      { type: 'palm', x: 7.1, z: 6.1 },
+      { type: 'monstera', x: -3.6, z: -6.2 },
+      { type: 'monstera', x: 3.6, z: -6.2 },
+      { type: 'monstera', x: 7.1, z: 6.1 },
       { type: 'coatstand', x: -7.2, z: 5.6 },
       { type: 'guide', x: 2.6, z: 4.4, rotation: -20 },
       { type: 'donations', x: 6.9, z: 3 },
@@ -174,8 +176,8 @@ export const ROOMS = [
     ],
     decor: [
       { type: 'settee', x: 0, z: -6.5 },
-      { type: 'palm', x: -3.4, z: 11.2 },
-      { type: 'palm', x: 3.4, z: 11.2 },
+      { type: 'monstera', x: -3.4, z: 11.2 },
+      { type: 'monstera', x: 3.4, z: 11.2 },
       { type: 'settee', x: 6.5, z: 0, rotation: 90 },
       { type: 'settee', x: -6.5, z: 0, rotation: 90 },
     ],
