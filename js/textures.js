@@ -217,7 +217,7 @@ function marble(color) {
     const t = turb(u, v);
     const vein = Math.pow(1 - Math.abs(Math.sin(Math.PI * 2 * (u + v) + t * 9)), 14);
     const vein2 = Math.pow(1 - Math.abs(Math.sin(Math.PI * 2 * (u * 2 - v) + t * 6)), 30);
-    const k = 1 - vein * 0.22 - vein2 * 0.12 + (fine(u, v) - 0.5) * 0.03;
+    const k = 1 - vein * 0.1 - vein2 * 0.05 + (fine(u, v) - 0.5) * 0.025;
     const c = tint(base, k);
     c[2] = clamp255(c[2] + vein * 6); // veins lean slightly cool
     return [...c, 0.5, 0.24 + vein * 0.1];

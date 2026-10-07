@@ -797,58 +797,190 @@ function buildPanel(room, ex) {
   makeInteractive([panel], { ...ex, description: ex.description ?? ex.text }, room);
 }
 
-// A marble portrait bust built from simple shapes, about 1 unit tall, centered on y = 0.
-// For a real likeness, export a scanned/sculpted .glb and use `model` instead.
+// ---------------------------------------------------------------- the bust
+// A marble portrait bust of David Copperfield, sculpted in code: each part starts as a smooth,
+// dense shape whose surface is pushed in or out (brow, eye sockets, nose, lips, chin, hair waves...).
+// About 1 unit tall, centered on y = 0, facing +z. For a scanned likeness, use `model` in config.js instead.
+
+// A soft round bulge (positive amount) or dent (negative) centered at c, with a radius per axis.
+function bump(p, [cx, cy, cz], [rx, ry, rz], amount) {
+  const dx = (p.x - cx) / rx;
+  const dy = (p.y - cy) / ry;
+  const dz = (p.z - cz) / rz;
+  return amount * Math.exp(-(dx * dx + dy * dy + dz * dz));
+}
+const smoothstep = (a, b, x) => {
+  const t = THREE.MathUtils.clamp((x - a) / (b - a), 0, 1);
+  return t * t * (3 - 2 * t);
+};
+
+// Moves every vertex with shape(position, originalDirection), then recomputes the smooth shading.
+function sculpt(geometry, shape) {
+  const pos = geometry.attributes.position;
+  const p = new THREE.Vector3();
+  const n = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    p.fromBufferAttribute(pos, i);
+    n.copy(p).normalize();
+    shape(p, n);
+    pos.setXYZ(i, p.x, p.y, p.z);
+  }
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+// Skull proportions: narrower than tall, and the jaw tapers toward the chin.
+function skullShape(p, n) {
+  const jaw = smoothstep(0.1, -0.9, n.y);
+  p.x *= 0.8 * (1 - 0.18 * jaw);
+  p.z *= 0.9;
+  if (n.y < 0) p.z += 0.015 * jaw * Math.max(0, n.z); // lower face sits slightly forward
+}
+
+function sculptHead() {
+  // seam of the sphere turned to the back of the head, where the hair hides it
+  return sculpt(new THREE.SphereGeometry(1, 160, 120, -Math.PI / 2), (p, n) => {
+    let d = 0;
+    d += bump(n, [0, 0.25, 0.95], [0.48, 0.07, 0.3], 0.06); // brow ridge, overhanging the eyes
+    d += bump(n, [0, 0.55, 0.82], [0.5, 0.25, 0.3], 0.02); // forehead
+    d += bump(n, [0, 0.2, 0.98], [0.07, 0.06, 0.2], -0.02); // between the brows
+    for (const s of [-1, 1]) {
+      d += bump(n, [s * 0.32, 0.1, 0.94], [0.15, 0.085, 0.2], -0.095); // eye socket
+      d += bump(n, [s * 0.32, 0.08, 0.965], [0.07, 0.045, 0.1], 0.05); // eyeball
+      d += bump(n, [s * 0.32, 0.125, 0.96], [0.08, 0.018, 0.1], 0.012); // upper eyelid
+      d += bump(n, [s * 0.33, 0.01, 0.95], [0.09, 0.025, 0.1], 0.01); // lower eyelid
+      d += bump(n, [s * 0.5, -0.08, 0.82], [0.18, 0.12, 0.25], 0.045); // cheekbone
+      d += bump(n, [s * 0.42, -0.36, 0.8], [0.14, 0.14, 0.3], -0.025); // cheek hollow
+      d += bump(n, [s * 0.62, -0.55, 0.45], [0.2, 0.18, 0.25], 0.03); // angle of the jaw
+      d += bump(n, [s * 0.98, 0.02, -0.05], [0.07, 0.22, 0.15], 0.13); // ear
+      d += bump(n, [s * 0.11, -0.3, 0.97], [0.055, 0.04, 0.1], 0.065); // nostril wing
+      d += bump(n, [s * 0.21, -0.39, 0.92], [0.035, 0.09, 0.1], -0.018); // smile line
+      d += bump(n, [s * 0.19, -0.475, 0.93], [0.04, 0.04, 0.1], -0.018); // corner of the mouth
+    }
+    d += bump(n, [0, 0.02, 1], [0.06, 0.12, 0.2], 0.05); // bridge of the nose
+    d += bump(n, [0, -0.13, 1], [0.07, 0.1, 0.2], 0.11);
+    d += bump(n, [0, -0.25, 0.97], [0.075, 0.065, 0.2], 0.16); // tip of the nose
+    d += bump(n, [0, -0.345, 0.95], [0.045, 0.025, 0.1], -0.01);
+    d += bump(n, [0, -0.425, 0.94], [0.14, 0.028, 0.15], 0.03); // upper lip
+    d += bump(n, [0, -0.47, 0.94], [0.16, 0.01, 0.15], -0.035); // line between the lips
+    d += bump(n, [0, -0.515, 0.91], [0.11, 0.032, 0.15], 0.035); // lower lip
+    d += bump(n, [0, -0.6, 0.87], [0.12, 0.035, 0.15], -0.03); // fold under the lip
+    d += bump(n, [0, -0.73, 0.76], [0.2, 0.12, 0.25], 0.11); // chin
+    p.multiplyScalar(1 + d);
+    skullShape(p, n);
+  });
+}
+
+// Thick, wavy hair swept back from a side part, with Victorian sideburns.
+function sculptHair() {
+  return sculpt(new THREE.SphereGeometry(1, 160, 120, -Math.PI / 2), (p, n) => {
+    // hairline: high on the forehead, above the ears at the sides, low at the nape
+    const f = n.z;
+    const hairline = f >= 0 ? THREE.MathUtils.lerp(0.2, 0.42, f) : THREE.MathUtils.lerp(0.2, -0.62, -f);
+    const grow = smoothstep(hairline - 0.08, hairline + 0.16, n.y);
+    const partX = -0.3; // part on his left
+    const waves = Math.sin((n.x - partX) * 12 + n.z * 4 + Math.sin(n.y * 6) * 1.6) * 0.02;
+    const strands = Math.sin((n.x - partX) * 55 + n.z * 8) * 0.004;
+    let d = 0.085 + waves + strands;
+    d += bump(n, [-0.05, 0.78, 0.58], [0.45, 0.22, 0.32], 0.11); // volume swept over the forehead
+    d += bump(n, [0.4, 0.72, 0.25], [0.35, 0.25, 0.4], 0.045);
+    d += bump(n, [-0.55, 0.55, 0.35], [0.25, 0.3, 0.4], 0.03);
+    d += bump(n, [partX, 0.9, 0.3], [0.025, 0.35, 0.7], -0.035); // the part
+    d -= bump(n, [Math.sign(n.x) * 0.95, 0, 0], [0.12, 0.3, 0.25], 0.05); // tucked above the ears
+    // where no hair grows, the surface sinks inside the head and is hidden
+    p.multiplyScalar(0.93 + (0.07 + d) * grow);
+    skullShape(p, n);
+  });
+}
+
+// Shoulders and chest in a high-collared frock coat with lapels.
+function sculptTorso() {
+  // the bottom is cut straight through the chest, like a classical bust
+  const profile = [[0, 0], [0.84, 0], [0.92, 0.025], [0.97, 0.09], [1, 0.25], [0.99, 0.4], [0.93, 0.54], [0.72, 0.68], [0.46, 0.78], [0.3, 0.85], [0, 0.88]]
+    .map(([r, y]) => new THREE.Vector2(r, y));
+  // seam at the back
+  return sculpt(new THREE.LatheGeometry(profile, 128, Math.PI), (p) => {
+    const front = p.z > 0;
+    const ax = Math.abs(p.x);
+    if (front) p.z *= 1 + 0.18 * Math.exp(-(((p.y - 0.45) / 0.25) ** 2)); // chest
+    else p.z *= 0.85; // flatter back
+    p.y -= 0.12 * ax * ax * smoothstep(0.4, 0.88, p.y); // shoulders slope down from the neck
+    if (front && p.y > 0.2 && p.y < 0.86) {
+      // coat lapels: raised bands outside a V from the collar down to the chest
+      const v = 0.2 + (0.85 - p.y) * 0.6;
+      const lapel = smoothstep(v, v + 0.03, ax) * (1 - smoothstep(v + 0.24, v + 0.32, ax));
+      const opening = 1 - smoothstep(v - 0.03, v, ax); // waistcoat inside the V sits deeper
+      p.z += 0.055 * lapel * smoothstep(0.2, 0.35, p.y) - 0.03 * opening;
+    }
+    p.x *= 0.42;
+    p.y *= 0.42;
+    p.z *= 0.24;
+  });
+}
+
 function makeBust(color) {
   const marble = new THREE.MeshStandardMaterial({ ...surfaceMaps('marble', color ?? '#f1eee8'), roughness: 1 });
-  const hairMat = marble.clone();
-  hairMat.side = THREE.DoubleSide;
+  const doubleSided = marble.clone();
+  doubleSided.side = THREE.DoubleSide;
   const bust = new THREE.Group();
-  const part = (geometry, [x, y, z], [sx, sy, sz] = [1, 1, 1], rotX = 0, material = marble) => {
+  const add = (geometry, [x, y, z], material = marble) => {
     const m = new THREE.Mesh(geometry, material);
     m.position.set(x, y, z);
-    m.scale.set(sx, sy, sz);
-    m.rotation.x = rotX;
-    m.castShadow = true;
-    m.receiveShadow = true;
+    m.castShadow = m.receiveShadow = true;
     bust.add(m);
     return m;
   };
-  const ball = new THREE.SphereGeometry(1, 48, 32);
 
-  // round socle the bust stands on
-  part(new THREE.CylinderGeometry(0.15, 0.2, 0.12, 48), [0, -0.44, 0]);
-  // chest and shoulders: a lathe dome squashed front-to-back
-  const profile = [[0, 0], [0.92, 0], [1, 0.1], [0.98, 0.38], [0.86, 0.66], [0.55, 0.9], [0.25, 0.99], [0, 1]].map(([r, y]) => new THREE.Vector2(r, y));
-  part(new THREE.LatheGeometry(profile, 64), [0, -0.38, 0], [0.36, 0.44, 0.2]);
-  // Victorian dress: coat lapels, a high stand-up collar, and a tied cravat
+  // turned socle
+  const socle = [[0, 0], [0.2, 0], [0.2, 0.025], [0.175, 0.04], [0.15, 0.065], [0.135, 0.095], [0.16, 0.105], [0.165, 0.12], [0, 0.12]]
+    .map(([r, y]) => new THREE.Vector2(r, y));
+  add(new THREE.LatheGeometry(socle, 64), [0, -0.5, 0]);
+  add(sculptTorso(), [0, -0.38, 0]);
+
+  // neck, leaning slightly forward
+  const neck = add(new THREE.CylinderGeometry(0.088, 0.1, 0.22, 48), [0, 0.07, -0.005]);
+  neck.rotation.x = 0.12;
+
+  // high stand-up collar (open at the front) and a tied cravat
+  // Victorian neckline: a cravat wrapped around the neck, a puffed knot, and upturned shirt-collar points
+  const wrap = sculpt(new THREE.TorusGeometry(0.098, 0.036, 24, 96), (p) => {
+    const a = Math.atan2(p.y, p.x);
+    p.z *= 1 + Math.sin(a * 5) * 0.03; // a few soft folds in the fabric
+  });
+  const band = add(wrap, [0, 0.06, -0.005]);
+  band.rotation.x = Math.PI / 2 + 0.12;
+  band.scale.set(1, 1, 1.15);
+  const knot = add(sculpt(new THREE.SphereGeometry(1, 48, 32), (p, n) => {
+    p.multiplyScalar(1 + Math.sin(n.x * 7 + n.y * 3) * 0.03);
+  }), [0, 0.045, 0.115]);
+  knot.scale.set(0.042, 0.04, 0.03);
+  const ascot = add(sculpt(new THREE.SphereGeometry(1, 48, 32), (p, n) => {
+    p.multiplyScalar(1 + Math.sin(n.x * 8) * 0.035 * smoothstep(0.3, -0.8, n.y)); // folds fanning downward
+  }), [0, -0.02, 0.14]);
+  ascot.scale.set(0.05, 0.06, 0.022);
+  ascot.rotation.x = -0.55;
+  const tip = new THREE.Shape();
+  tip.moveTo(0, 0);
+  tip.lineTo(0.045, 0);
+  tip.lineTo(0.012, 0.055);
+  tip.closePath();
   for (const side of [-1, 1]) {
-    const lapel = part(new THREE.BoxGeometry(0.05, 0.2, 0.015), [side * 0.055, -0.1, 0.165]);
-    lapel.rotation.set(-0.45, 0, side * 0.4);
-    part(ball, [side * 0.04, 0.045, 0.082], [0.03, 0.018, 0.018]); // cravat bow
+    const point = add(new THREE.ExtrudeGeometry(tip, { depth: 0.006, bevelEnabled: false }), [side * 0.03, 0.08, 0.08], doubleSided);
+    point.scale.x = side;
+    point.rotation.set(-0.25, side * 0.55, side * -0.15);
   }
-  part(new THREE.CylinderGeometry(0.09, 0.094, 0.08, 40, 1, true), [0, 0.07, 0], [1, 1, 1], 0, hairMat);
-  part(ball, [0, 0.045, 0.088], [0.03, 0.026, 0.024]); // cravat knot
-  part(ball, [0, -0.005, 0.112], [0.042, 0.05, 0.022]); // cravat drape
-  // neck
-  part(new THREE.CylinderGeometry(0.075, 0.085, 0.16, 32), [0, 0.09, 0]);
-  // head and jaw
-  part(ball, [0, 0.27, 0.005], [0.128, 0.165, 0.15]);
-  part(ball, [0, 0.2, 0.02], [0.1, 0.075, 0.095]);
-  part(ball, [0, 0.13, 0.085], [0.038, 0.03, 0.035]);
-  // brow, eyes, nose, ears
-  part(ball, [0, 0.305, 0.118], [0.095, 0.018, 0.035]);
-  for (const side of [-1, 1]) {
-    part(ball, [side * 0.048, 0.285, 0.128], [0.02, 0.014, 0.016]);
-    part(ball, [side * 0.128, 0.26, -0.005], [0.018, 0.045, 0.03]);
-    part(ball, [side * 0.12, 0.22, 0.035], [0.018, 0.05, 0.03]); // sideburns
+
+  // head and hair, chin lifted a touch
+  const head = new THREE.Group();
+  head.position.set(0, 0.29, 0.015);
+  head.rotation.x = -0.06;
+  head.scale.setScalar(0.2);
+  for (const geometry of [sculptHead(), sculptHair()]) {
+    const m = new THREE.Mesh(geometry, marble);
+    m.castShadow = m.receiveShadow = true;
+    head.add(m);
   }
-  part(ball, [0, 0.245, 0.145], [0.02, 0.045, 0.03], -0.25);
-  // hair: a cap that hugs the skull, tipped back so the hairline sits high at the front,
-  // with extra volume swept up and back on top
-  part(new THREE.SphereGeometry(1, 48, 32, 0, Math.PI * 2, 0, Math.PI * 0.55), [0, 0.29, -0.01], [0.136, 0.17, 0.158], -0.45, hairMat);
-  part(ball, [0, 0.4, 0.02], [0.11, 0.05, 0.11], -0.3);
-  part(ball, [0, 0.385, -0.06], [0.125, 0.06, 0.11], 0.15);
+  bust.add(head);
   return bust;
 }
 
