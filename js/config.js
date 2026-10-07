@@ -33,7 +33,9 @@
 //              You only need to put a door on ONE side; the room on the
 //              other side of the wall gets the matching opening automatically.
 //    exhibits  list of things to see (see EXHIBIT TYPES below)
-//    decor     benches, settees, plants, and desks: [{ type, x, z, rotation }]
+//    decor     furniture: [{ type, x, z, rotation }]  (rotation in degrees; the front faces south at 0)
+//              types: bench, settee, plant, palm, admissions (desk), clock, coatstand, guide (map easel),
+//              donations, and stanchions: { type:'stanchions', points:[[x, z], [x, z], ...] } (a rope line)
 //              x/z are relative to the room's center.
 //
 //  EXHIBIT TYPES
@@ -47,6 +49,8 @@
 //              { type:'pedestal', x, z, shape:'bust'|'torusKnot'|'icosahedron'|'sphere'|'box'|'cone'|'torus',
 //                color, model:'assets/models/thing.glb', scale, spin, facing, spotlight, rope, title, description }
 //              `rope: true` puts brass posts and a velvet rope around it.
+//    case      glass display case on a mahogany cabinet
+//              { type:'case', x, z, rotation, title, subtitle, description, image }
 //
 //  `description` can be one string or an array of paragraphs.
 //  Every painting, panel, and pedestal can be clicked (or press E) for details.
@@ -108,9 +112,16 @@ export const ROOMS = [
       empty('south', 5, { width: 2.2, height: 1.5 }),
     ],
     decor: [
-      { type: 'desk', x: -4, z: -3.5 },
-      { type: 'plant', x: -6.8, z: -5.8 },
-      { type: 'plant', x: 6.8, z: -5.8 },
+      { type: 'admissions', x: -4.6, z: -3.6 },
+      { type: 'stanchions', points: [[-6.2, -1.9], [-6.2, 0.6]] },
+      { type: 'stanchions', points: [[-3, -1.9], [-3, 0.6]] },
+      { type: 'clock', x: 7.5, z: -5, rotation: -90 },
+      { type: 'palm', x: -3.6, z: -6.2 },
+      { type: 'palm', x: 3.6, z: -6.2 },
+      { type: 'palm', x: 7.1, z: 6.1 },
+      { type: 'coatstand', x: -7.2, z: 5.6 },
+      { type: 'guide', x: 2.6, z: 4.4, rotation: -20 },
+      { type: 'donations', x: 6.9, z: 3 },
       { type: 'settee', x: -4.5, z: 3.5, rotation: 90 },
       { type: 'settee', x: 4.5, z: 3.5, rotation: 90 },
     ],
@@ -155,9 +166,16 @@ export const ROOMS = [
           'Upper right: 3. What Failure Takes\n' +
           'Lower right: 4. Same Price, Different Weight',
       },
+      // glass display cases between the gallery doorways (empty exhibit slots)
+      { type: 'case', x: -4, z: -9.5, rotation: 23, title: '', description: '' },
+      { type: 'case', x: 4, z: -9.5, rotation: -23, title: '', description: '' },
+      { type: 'case', x: -9.5, z: 3.5, rotation: 110, title: '', description: '' },
+      { type: 'case', x: 9.5, z: 3.5, rotation: -110, title: '', description: '' },
     ],
     decor: [
       { type: 'settee', x: 0, z: -6.5 },
+      { type: 'palm', x: -3.4, z: 11.2 },
+      { type: 'palm', x: 3.4, z: 11.2 },
       { type: 'settee', x: 6.5, z: 0, rotation: 90 },
       { type: 'settee', x: -6.5, z: 0, rotation: 90 },
     ],
