@@ -229,6 +229,50 @@ function floorTexture(style, color) {
   return tex;
 }
 
+// Vertical wood slats with dark gaps, used for wood walls and ceilings.
+// One texture tile is about 1 m wide (8 slats).
+function slatTexture(color) {
+  const tex = canvasTexture(512, 512, (ctx, w, h) => {
+    const rand = seededRandom('slats' + color);
+    const n = 8;
+    const pitch = w / n;
+    ctx.fillStyle = shade(color, -0.32);
+    ctx.fillRect(0, 0, w, h);
+    for (let i = 0; i < n; i++) {
+      const x = i * pitch + pitch * 0.12;
+      const width = pitch * 0.76;
+      ctx.fillStyle = shade(color, (rand() - 0.5) * 0.08);
+      ctx.fillRect(x, 0, width, h);
+      ctx.strokeStyle = 'rgba(90,60,30,0.1)';
+      for (let g = 0; g < 5; g++) {
+        const gx = x + rand() * width;
+        ctx.beginPath();
+        ctx.moveTo(gx, 0);
+        ctx.bezierCurveTo(gx + 6, h / 3, gx - 6, (2 * h) / 3, gx, h);
+        ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(255,255,255,0.14)';
+      ctx.fillRect(x, 0, 3, h);
+      ctx.fillStyle = 'rgba(0,0,0,0.14)';
+      ctx.fillRect(x + width - 3, 0, 3, h);
+    }
+  });
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
+const WOOD_COLOR = '#d6b68d';
+const SLATS = slatTexture(WOOD_COLOR);
+
+// Slat material sized so slats keep the same width on every wall piece.
+function slatMaterial(width, height, glow = 0) {
+  const map = SLATS.clone();
+  map.repeat.set(width, height / 2.5);
+  return new THREE.MeshStandardMaterial({
+    map, roughness: 0.7, emissiveMap: glow ? map : null, emissive: glow ? 0xffffff : 0x000000, emissiveIntensity: glow,
+  });
+}
+
 function artTexture(title, accent) {
   return canvasTexture(512, 512, (ctx, w, h) => {
     const rand = seededRandom(title);
@@ -258,7 +302,7 @@ function textPanelTexture(title, text, widthMeters, aspect, accent) {
   const H = Math.round(W / aspect);
   const k = W / 1024;
   return canvasTexture(W, H, (ctx) => {
-    ctx.fillStyle = '#16161b';
+    ctx.fillStyle = '#27231f';
     ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = accent;
     ctx.fillRect(48 * k, 48 * k, 10 * k, H - 96 * k);
@@ -311,7 +355,7 @@ function labelTexture(title, subtitle) {
 
 function signTexture(text, accent) {
   return canvasTexture(1024, 160, (ctx, w, h) => {
-    ctx.fillStyle = '#121216';
+    ctx.fillStyle = '#211d19';
     ctx.fillRect(0, 0, w, h);
     ctx.fillStyle = accent;
     ctx.fillRect(0, h - 10, w, 10);
@@ -344,9 +388,10 @@ function loadImage(url, material) {
 
 // ---------------------------------------------------------------- shared materials
 const MAT = {
-  frame: new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.5 }),
+  frame: new THREE.MeshStandardMaterial({ color: 0xc9a57a, roughness: 0.55 }),
+  oak: new THREE.MeshStandardMaterial({ color: 0xc19a6b, roughness: 0.6 }),
   passepartout: new THREE.MeshStandardMaterial({ color: 0xfafafa, roughness: 0.9 }),
-  trim: new THREE.MeshStandardMaterial({ color: 0x2b2b2b, roughness: 0.6 }),
+  trim: new THREE.MeshStandardMaterial({ color: 0x2f2a25, roughness: 0.6 }),
   pedestal: new THREE.MeshStandardMaterial({ color: 0xfbfbfb, roughness: 0.35 }),
   bench: new THREE.MeshStandardMaterial({ color: 0xc9a77c, roughness: 0.55 }),
   metal: new THREE.MeshStandardMaterial({ color: 0x1c1c1c, roughness: 0.25, metalness: 0.9 }),
@@ -355,7 +400,7 @@ const MAT = {
   marble: new THREE.MeshStandardMaterial({ color: 0xf1eee8, roughness: 0.3 }),
   light: new THREE.MeshBasicMaterial({ color: 0xffffff }),
   sky: new THREE.MeshBasicMaterial({ color: 0xdff0ff }),
-  ceiling: new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x6a6a6a, roughness: 1 }),
+  ceiling: new THREE.MeshStandardMaterial({ color: 0xfbf8f2, emissive: 0x6a6660, roughness: 1 }),
 };
 
 // ---------------------------------------------------------------- room builders
@@ -363,6 +408,7 @@ function buildRoom(room) {
   const { x, z, w, d, height } = room;
   const wallMat = new THREE.MeshStandardMaterial({ color: room.wallColor ?? '#f4f4f1', roughness: 0.92 });
   const featureMat = new THREE.MeshStandardMaterial({ color: room.accent ?? '#888', roughness: 0.92 });
+  const wallMaterialFor = (side) => (side === room.woodWall ? 'wood' : side === room.featureWall ? featureMat : wallMat);
 
   // floor
   const tex = floorTexture(room.floor ?? 'wood', room.floorColor ?? '#888');
@@ -376,13 +422,14 @@ function buildRoom(room) {
   scene.add(floor);
 
   // ceiling
-  const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(w, d), MAT.ceiling);
+  const ceilingMat = room.ceiling === 'wood' ? slatMaterial(w, d * 2.5, 0.5) : MAT.ceiling;
+  const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(w, d), ceilingMat);
   ceiling.rotation.x = Math.PI / 2;
   ceiling.position.set(x, height, z);
   scene.add(ceiling);
 
   // walls (with door openings), baseboards, door trim and signs
-  for (const side of Object.keys(SIDES)) buildWall(room, side, side === room.featureWall ? featureMat : wallMat);
+  for (const side of Object.keys(SIDES)) buildWall(room, side, wallMaterialFor(side));
   buildCeilingLights(room);
 
   for (const ex of room.exhibits ?? []) {
@@ -430,7 +477,7 @@ function buildCeilingLights(room) {
   const count = Math.max(w, d) > 18 ? 2 : 1;
   for (let i = 0; i < count; i++) {
     const t = count === 1 ? 0 : (i === 0 ? -0.25 : 0.25);
-    const light = new THREE.PointLight(0xfff6ea, ROOM_LIGHT * (height / DEFAULT_HEIGHT), Math.max(w, d), 1);
+    const light = new THREE.PointLight(0xffecd6, ROOM_LIGHT * (height / DEFAULT_HEIGHT), Math.max(w, d), 1);
     light.position.set(x + (longAlongX ? w * t : 0), height - 0.8, z + (longAlongX ? 0 : d * t));
     scene.add(light);
   }
@@ -460,17 +507,29 @@ function buildWall(room, side, wallMat) {
     const h = H - bottom;
     const p = wallPoint(room, side, mid, HALF_WALL / 2);
     const [bw, bd] = s.horizontal ? [length, HALF_WALL] : [HALF_WALL, length];
-    const wall = addBox(bw, h, bd, wallMat, p.x, bottom + h / 2, p.z, bottom === 0);
+    const material = wallMat === 'wood' ? slatMaterial(length, h) : wallMat;
+    const wall = addBox(bw, h, bd, material, p.x, bottom + h / 2, p.z, bottom === 0);
     blockers.push(wall);
 
-    if (bottom === 0) {
+    if (bottom === 0 && wallMat !== 'wood') {
       const bp = wallPoint(room, side, mid, HALF_WALL + 0.02);
       const [tw, td] = s.horizontal ? [length, 0.04] : [0.04, length];
-      addBox(tw, 0.16, td, MAT.trim, bp.x, 0.08, bp.z);
+      addBox(tw, 0.14, td, MAT.oak, bp.x, 0.07, bp.z);
     }
   }
 
   for (const door of room.doors[side]) {
+    // light oak frame around the opening
+    const along = (off) => wallPoint(room, side, door.at + off, HALF_WALL + 0.02);
+    const post = s.horizontal ? [0.1, DOOR_HEIGHT, 0.04] : [0.04, DOOR_HEIGHT, 0.1];
+    for (const off of [-door.width / 2 - 0.05, door.width / 2 + 0.05]) {
+      const p = along(off);
+      addBox(...post, MAT.oak, p.x, DOOR_HEIGHT / 2, p.z);
+    }
+    const tp = along(0);
+    const top = s.horizontal ? [door.width + 0.2, 0.1, 0.04] : [0.04, 0.1, door.width + 0.2];
+    addBox(...top, MAT.oak, tp.x, DOOR_HEIGHT + 0.05, tp.z);
+
     // sign above the door naming the room it leads to
     if (door.to) {
       const sp = wallPoint(room, side, door.at, HALF_WALL + 0.02);
@@ -561,13 +620,15 @@ function makeBust(color) {
   // chest and shoulders: a lathe dome squashed front-to-back
   const profile = [[0, 0], [0.92, 0], [1, 0.1], [0.98, 0.38], [0.86, 0.66], [0.55, 0.9], [0.25, 0.99], [0, 1]].map(([r, y]) => new THREE.Vector2(r, y));
   part(new THREE.LatheGeometry(profile, 64), [0, -0.38, 0], [0.36, 0.44, 0.2]);
-  // jacket lapels + shirt collar
+  // Victorian dress: coat lapels, a high stand-up collar, and a tied cravat
   for (const side of [-1, 1]) {
     const lapel = part(new THREE.BoxGeometry(0.05, 0.2, 0.015), [side * 0.055, -0.1, 0.165]);
     lapel.rotation.set(-0.45, 0, side * 0.4);
-    const collar = part(new THREE.BoxGeometry(0.06, 0.05, 0.012), [side * 0.04, 0.045, 0.085]);
-    collar.rotation.set(-0.35, 0, side * 0.55);
+    part(ball, [side * 0.04, 0.045, 0.082], [0.03, 0.018, 0.018]); // cravat bow
   }
+  part(new THREE.CylinderGeometry(0.09, 0.094, 0.08, 40, 1, true), [0, 0.07, 0], [1, 1, 1], 0, hairMat);
+  part(ball, [0, 0.045, 0.088], [0.03, 0.026, 0.024]); // cravat knot
+  part(ball, [0, -0.005, 0.112], [0.042, 0.05, 0.022]); // cravat drape
   // neck
   part(new THREE.CylinderGeometry(0.075, 0.085, 0.16, 32), [0, 0.09, 0]);
   // head and jaw
@@ -579,6 +640,7 @@ function makeBust(color) {
   for (const side of [-1, 1]) {
     part(ball, [side * 0.048, 0.285, 0.128], [0.02, 0.014, 0.016]);
     part(ball, [side * 0.128, 0.26, -0.005], [0.018, 0.045, 0.03]);
+    part(ball, [side * 0.12, 0.22, 0.035], [0.018, 0.05, 0.03]); // sideburns
   }
   part(ball, [0, 0.245, 0.145], [0.02, 0.045, 0.03], -0.25);
   // hair: a cap that hugs the skull, tipped back so the hairline sits high at the front,
@@ -611,7 +673,7 @@ function buildPedestal(room, ex) {
   const baseH = 1.1;
 
   const base = addBox(baseW, baseH, baseW, MAT.pedestal, px, baseH / 2, pz, true);
-  const cap = addBox(baseW + 0.1, 0.06, baseW + 0.1, MAT.pedestal, px, baseH + 0.03, pz);
+  const cap = addBox(baseW + 0.1, 0.06, baseW + 0.1, MAT.oak, px, baseH + 0.03, pz);
   const holder = new THREE.Group();
   holder.position.set(px, baseH + 0.06 + 0.5 * scale, pz);
   scene.add(holder);

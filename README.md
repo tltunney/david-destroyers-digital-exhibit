@@ -59,7 +59,8 @@ Three.js is included in `lib/three/`, so the museum works with no internet conne
 - **New rooms**: copy a room block and give it new `x`, `z` values so it sits next to an existing room.
   Add a door on the shared wall, and the room on the other side gets the matching opening automatically.
 - **Colors and floors**: `wallColor`, `floorColor`, `accent`, and `floor` (`concrete`, `wood`, `marble`, `tile`, `carpet`).
-  `featureWall: 'north'` paints one wall in the room's accent color, and `skylight: true` adds a glowing ceiling skylight.
+  `featureWall: 'north'` paints one wall in the room's accent color, `woodWall: 'north'` covers a wall in light wood slats,
+  `ceiling: 'wood'` gives a wood-slat ceiling, and `skylight: true` adds a glowing ceiling skylight.
 - **The bust**: the Main Hall centerpiece uses `shape: 'bust'`, a marble bust built from simple shapes.
   Pedestals also take `spin`, `facing`, and `spotlight`.
 
