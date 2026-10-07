@@ -637,6 +637,7 @@ function buildRoom(room) {
   buildTracks(room);
   if (room.entrance) buildEntrance(room, room.entrance);
   if (!room.passage && room.fixtures !== false) buildFixtures(room);
+  if (room.attach && room.wallTitle !== false) buildWallTitle(room);
 
   for (const ex of room.exhibits ?? []) {
     if (ex.type === 'painting') buildPainting(room, ex);
@@ -657,9 +658,11 @@ function buildRoom(room) {
 function buildCeilingLights(room) {
   const { x, z, w, d, height } = room;
   if (room.victorian) {
-    // lit by gas-lamp sconces and one warm room light instead of LED strips
+    // lit by gas-lamp sconces and a brass chandelier instead of LED strips
+    const chandelier = !room.passage && room.chandelier !== false;
+    if (chandelier) buildChandelier(room);
     const light = new THREE.PointLight(0xffd9a8, ROOM_LIGHT * 1.1 * (height / DEFAULT_HEIGHT), Math.max(w, d) * 1.2, 1);
-    light.position.set(x, height - 0.8, z);
+    light.position.set(x, height - (chandelier ? 1.1 : 0.8), z);
     parent.add(light);
     return;
   }
@@ -743,12 +746,18 @@ function buildWall(room, side) {
     wall.receiveShadow = true;
     blockers.push(wall);
 
-    if (bottom === 0 && room.wainscot) addWainscot(room, side, mid, length);
-    else if (bottom === 0 && !wood) {
-      // recessed shadow-gap baseboard, oak
-      const bp = wallPoint(room, side, mid, HALF_WALL + 0.015);
-      const [tw, td] = s.horizontal ? [length, 0.03] : [0.03, length];
-      addBox(tw, 0.12, td, MAT.oak, bp.x, 0.07, bp.z);
+    if (bottom !== 0) continue;
+    // wall finishes stop at the frame of the glass entrance doors
+    for (const [p, q] of aroundEntrance(room, side, a, b)) {
+      const pm = (p + q) / 2;
+      const pl = q - p;
+      if (room.wainscot) addWainscot(room, side, pm, pl);
+      else if (!wood) {
+        // recessed shadow-gap baseboard, oak
+        const bp = wallPoint(room, side, pm, HALF_WALL + 0.015);
+        const [tw, td] = s.horizontal ? [pl, 0.03] : [0.03, pl];
+        addBox(tw, 0.12, td, MAT.oak, bp.x, 0.07, bp.z);
+      }
     }
   }
   if (room.victorian) {
@@ -759,6 +768,10 @@ function buildWall(room, side) {
     const gp = wallPoint(room, side, 0, HALF_WALL + 0.25);
     const [gw, gd] = s.horizontal ? [len, 0.03] : [0.03, len];
     addBox(gw, 0.05, gd, MAT.gilt, gp.x, H - 0.4, gp.z);
+    // picture rail: pictures hang from it on cords, as they did before nails in plaster
+    const rp = wallPoint(room, side, 0, HALF_WALL + 0.02);
+    const [rw, rd] = s.horizontal ? [len, 0.04] : [0.04, len];
+    addBox(rw, 0.05, rd, MAT.mahogany, rp.x, H - PICTURE_RAIL_DROP, rp.z);
   }
 
   for (const door of room.doors[side]) {
@@ -772,6 +785,15 @@ function buildWall(room, side) {
     const tp = along(0);
     const top = s.horizontal ? [door.width + 0.2, 0.1, 0.04] : [0.04, 0.1, door.width + 0.2];
     addBox(...top, room.victorian ? MAT.mahogany : MAT.oak, tp.x, DOOR_HEIGHT + 0.05, tp.z);
+    // line the opening through this room's half of the wall (the room next door lines its half),
+    // so you never see the raw edge of the wall beyond
+    const depth = HALF_WALL + 0.03;
+    for (const sgn of [-1, 1]) {
+      const jp = wallPoint(room, side, door.at + sgn * (door.width / 2 - 0.02), depth / 2);
+      addBox(...(s.horizontal ? [0.04, DOOR_HEIGHT, depth] : [depth, DOOR_HEIGHT, 0.04]), room.victorian ? MAT.mahogany : MAT.oak, jp.x, DOOR_HEIGHT / 2, jp.z);
+    }
+    const sp0 = wallPoint(room, side, door.at, depth / 2);
+    addBox(...(s.horizontal ? [door.width, 0.04, depth] : [depth, 0.04, door.width]), room.victorian ? MAT.mahogany : MAT.oak, sp0.x, DOOR_HEIGHT - 0.02, sp0.z);
 
     // sign above the door naming the room it leads to
     if (door.to && !room.passage) {
@@ -788,8 +810,20 @@ function buildWall(room, side) {
   }
 }
 
+// The stretch [a, b] of a wall, minus the glass entrance doors and their frame if they're on this wall.
+const ENTRANCE_W = 3.4;
+function aroundEntrance(room, side, a, b) {
+  if (room.entrance !== side) return [[a, b]];
+  const gap = ENTRANCE_W / 2 + 0.1;
+  const out = [];
+  if (a < -gap) out.push([a, Math.min(b, -gap)]);
+  if (b > gap) out.push([Math.max(a, gap), b]);
+  return out;
+}
+
 // Victorian wall finish below the wallpaper: raised mahogany panels, a chair rail, and a tall skirting.
 const WAINSCOT_H = 1.1;
+const PICTURE_RAIL_DROP = 0.62; // how far below the ceiling the picture rail runs
 function addWainscot(room, side, mid, length) {
   const s = SIDES[side];
   const box = (thick, h, y, inset, material) => {
@@ -840,7 +874,7 @@ function addSconce(room, side, at, y = 2.6) {
 // Glass entrance doors with daylight outside and an EXIT sign above, centered on a wall.
 function buildEntrance(room, side) {
   const group = new THREE.Group();
-  const W = 3.4;
+  const W = ENTRANCE_W;
   const H = 3;
   const outside = canvasTexture(512, 512, (ctx, w, h) => {
     const sky = ctx.createLinearGradient(0, 0, 0, h);
@@ -932,6 +966,15 @@ function buildPainting(room, ex) {
 
   group.add(frame, mat, art);
   if (ex.title) group.add(label);
+  if (room.victorian) {
+    // two brass cords from hooks on the picture rail to the top corners of the frame
+    const railY = room.height - PICTURE_RAIL_DROP - y;
+    for (const sgn of [-1, 1]) {
+      const hook = new THREE.Vector3(sgn * 0.15, railY - 0.02, 0.045);
+      rodBetween(group, hook, new THREE.Vector3(sgn * (w / 2 + 0.05), h / 2 + 0.19, 0.035), 0.004, MAT.gilt);
+      piece(group, new THREE.SphereGeometry(0.018, 10, 8), MAT.gilt, hook.x, hook.y, hook.z);
+    }
+  }
   addWallLighting(group, w + 0.4, h + 0.4, undefined, !room.victorian);
   mountOnWall(room, ex, group, y);
   makeInteractive([frame, mat, art, label], ex, room);
@@ -1749,6 +1792,31 @@ function buildFixtures(room) {
   piece(monitor, new THREE.BoxGeometry(0.16, 0.11, 0.035), FIXTURE_MAT.white, 0, 0, 0.018);
   piece(monitor, new THREE.PlaneGeometry(0.11, 0.05), FIXTURE_MAT.screen, 0, 0.012, 0.037);
   mountOnWall(room, { wall: 'west', at: d / 2 - 1.2 }, monitor, 1.55);
+  // light switch and a power outlet beside the doorway
+  const plate = (group, w, h) => piece(group, new THREE.BoxGeometry(w, h, 0.012), FIXTURE_MAT.white, 0, 0, 0.006);
+  if (door) {
+    const sw = new THREE.Group();
+    plate(sw, 0.08, 0.12);
+    piece(sw, new THREE.BoxGeometry(0.018, 0.035, 0.014), FIXTURE_MAT.white, 0, 0.004, 0.016).rotation.x = 0.25;
+    mountOnWall(room, { wall: 'south', at: door.at - door.width / 2 - 0.45 }, sw, 1.2);
+    const out = new THREE.Group();
+    plate(out, 0.08, 0.12);
+    for (const oy of [-0.025, 0.025]) piece(out, new THREE.BoxGeometry(0.03, 0.028, 0.004), MAT.trim, 0, oy, 0.013);
+    mountOnWall(room, { wall: 'south', at: door.at + door.width / 2 + 0.6 }, out, 0.3);
+  }
+  // linear floor grilles for the air conditioning, along both long walls
+  const grilleTex = canvasTexture(256, 32, (ctx, cw, ch) => {
+    ctx.fillStyle = '#2b2b2b';
+    ctx.fillRect(0, 0, cw, ch);
+    ctx.fillStyle = '#0b0b0b';
+    for (let gx = 6; gx < cw - 4; gx += 8) ctx.fillRect(gx, 5, 4, ch - 10);
+  });
+  for (const sgn of [-1, 1]) {
+    const grille = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.2), new THREE.MeshStandardMaterial({ map: grilleTex, roughness: 0.4, metalness: 0.6, polygonOffset: true, polygonOffsetFactor: -2 }));
+    grille.rotation.set(-Math.PI / 2, 0, Math.PI / 2);
+    grille.position.set(x + sgn * (w / 2 - HALF_WALL - 0.35), 0.003, z - d / 4);
+    parent.add(grille);
+  }
   // the guard's chair against the west wall near the doorway, facing into the room
   const chair = new THREE.Group();
   const cx = x - w / 2 + 0.55;
@@ -1800,6 +1868,8 @@ const FURNITURE = {
 
 function buildDecor(room, item) {
   if (item.type === 'stanchions') return buildStanchionLine(room, item.points);
+  if (item.type === 'rug') return buildRug(room, item);
+  if (item.type === 'banner') return buildBanner(room, item);
   const x = room.x + (item.x ?? 0);
   const z = room.z + (item.z ?? 0);
   const rot = THREE.MathUtils.degToRad(item.rotation ?? 0);
@@ -1868,6 +1938,299 @@ function buildDecor(room, item) {
 
   addCollider(x, z, size[0], size[1], rot);
   room.footprints.push({ x, z, w: size[0], d: size[1], round, rot });
+}
+
+// ---------------------------------------------------------------- finishing touches
+// A thin rod between two points (cords, cables, chains).
+function rodBetween(group, a, b, radius, material) {
+  const dir = new THREE.Vector3().subVectors(b, a);
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, dir.length(), 6), material);
+  m.position.copy(a).addScaledVector(dir, 0.5);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+  group.add(m);
+  return m;
+}
+
+// Brass gasolier: a plaster ceiling rose, a drop rod, a turned brass column and eight curving arms,
+// each ending in a frosted globe with a cut-glass drop hanging beneath it.
+const CRYSTAL = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.02, metalness: 0.1, transparent: true, opacity: 0.55 });
+function buildChandelier(room) {
+  const g = new THREE.Group();
+  g.position.set(room.x, room.height, room.z);
+  // ceiling rose: a round plaster medallion with moulded rings and a leafy edge
+  piece(g, new THREE.CylinderGeometry(0.8, 0.8, 0.035, 48), MAT.plasterwork, 0, -0.018, 0);
+  for (const [r, t] of [[0.74, 0.03], [0.52, 0.035], [0.3, 0.03]]) piece(g, new THREE.TorusGeometry(r, t, 10, 48).rotateX(Math.PI / 2), MAT.plasterwork, 0, -0.04, 0);
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * Math.PI * 2;
+    piece(g, new THREE.SphereGeometry(0.06, 10, 6), MAT.plasterwork, Math.cos(a) * 0.63, -0.04, Math.sin(a) * 0.63).scale.set(1, 0.5, 1.6);
+  }
+  piece(g, new THREE.CylinderGeometry(0.09, 0.05, 0.08, 20), MAT.gilt, 0, -0.08, 0); // canopy
+  const hang = 1.25; // how far below the ceiling the arms are
+  piece(g, new THREE.CylinderGeometry(0.016, 0.016, hang - 0.1, 8), MAT.gilt, 0, -0.1 - (hang - 0.1) / 2, 0);
+  // turned brass column
+  const profile = [[0, 0.32], [0.05, 0.3], [0.06, 0.22], [0.035, 0.16], [0.09, 0.05], [0.11, -0.02], [0.07, -0.08], [0.1, -0.14], [0.05, -0.24], [0.025, -0.34], [0.05, -0.4], [0, -0.46]];
+  const column = new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r, y)), 24);
+  piece(g, column, MAT.gilt, 0, -hang, 0);
+  piece(g, new THREE.TorusGeometry(0.5, 0.012, 8, 64).rotateX(Math.PI / 2), MAT.gilt, 0, -hang - 0.12, 0);
+  const arms = 8;
+  for (let i = 0; i < arms; i++) {
+    const a = (i / arms) * Math.PI * 2;
+    const at = (r, y) => new THREE.Vector3(Math.cos(a) * r, -hang + y, Math.sin(a) * r);
+    const curve = new THREE.CatmullRomCurve3([at(0.07, 0.0), at(0.25, -0.16), at(0.47, -0.14), at(0.6, -0.02), at(0.62, 0.06)]);
+    g.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 20, 0.014, 8), MAT.gilt));
+    const tip = at(0.62, 0.06);
+    piece(g, new THREE.CylinderGeometry(0.055, 0.03, 0.06, 16), MAT.gilt, tip.x, tip.y + 0.02, tip.z);
+    piece(g, new THREE.SphereGeometry(0.075, 20, 14), MAT.gaslight, tip.x, tip.y + 0.12, tip.z);
+    piece(g, new THREE.CylinderGeometry(0.022, 0.028, 0.08, 12, 1, true), CRYSTAL, tip.x, tip.y + 0.22, tip.z);
+    // cut-glass drop under the cup
+    rodBetween(g, new THREE.Vector3(tip.x, tip.y - 0.01, tip.z), new THREE.Vector3(tip.x, tip.y - 0.12, tip.z), 0.0025, MAT.gilt);
+    piece(g, new THREE.OctahedronGeometry(0.03), CRYSTAL, tip.x, tip.y - 0.15, tip.z).scale.set(0.8, 1.6, 0.8);
+  }
+  // swags of crystal beads between the arms, and a finial at the bottom
+  for (let i = 0; i < arms; i++) {
+    for (let k = 1; k < 6; k++) {
+      const a = ((i + k / 6) / arms) * Math.PI * 2;
+      const sag = Math.sin((k / 6) * Math.PI) * 0.09;
+      piece(g, new THREE.IcosahedronGeometry(0.012, 0), CRYSTAL, Math.cos(a) * 0.55, -hang - 0.02 - sag, Math.sin(a) * 0.55);
+    }
+  }
+  piece(g, new THREE.SphereGeometry(0.04, 16, 10), MAT.gilt, 0, -hang - 0.5, 0);
+  piece(g, new THREE.ConeGeometry(0.025, 0.08, 12).rotateX(Math.PI), MAT.gilt, 0, -hang - 0.57, 0);
+  parent.add(g);
+}
+
+// A Persian-style rug: madder-red field with a central medallion, corner pieces and a navy border.
+function rugTexture(seed) {
+  return canvasTexture(1024, 640, (ctx, w, h) => {
+    const r = seededRandom(seed);
+    const red = '#6b1c1a';
+    const navy = '#1a2238';
+    const ivory = '#ddd0b2';
+    const gold = '#b08640';
+    ctx.fillStyle = red;
+    ctx.fillRect(0, 0, w, h);
+    // abrash: the slow color shifts of hand-dyed wool
+    for (let y = 0; y < h; y += 4) {
+      ctx.fillStyle = `rgba(${r() > 0.5 ? '40,10,8' : '150,60,50'},${0.04 + r() * 0.05})`;
+      ctx.fillRect(0, y, w, 4);
+    }
+    // border
+    const B = 70;
+    ctx.fillStyle = navy;
+    ctx.fillRect(0, 0, w, B);
+    ctx.fillRect(0, h - B, w, B);
+    ctx.fillRect(0, 0, B, h);
+    ctx.fillRect(w - B, 0, B, h);
+    const motif = (x, y, s) => {
+      ctx.fillStyle = gold;
+      ctx.beginPath();
+      ctx.moveTo(x, y - s);
+      ctx.lineTo(x + s, y);
+      ctx.lineTo(x, y + s);
+      ctx.lineTo(x - s, y);
+      ctx.fill();
+      ctx.fillStyle = red;
+      ctx.beginPath();
+      ctx.arc(x, y, s * 0.4, 0, Math.PI * 2);
+      ctx.fill();
+    };
+    for (let x = B / 2; x < w; x += 46) {
+      motif(x, B / 2, 16);
+      motif(x, h - B / 2, 16);
+    }
+    for (let y = B / 2 + 46; y < h - B; y += 46) {
+      motif(B / 2, y, 16);
+      motif(w - B / 2, y, 16);
+    }
+    ctx.strokeStyle = ivory;
+    ctx.lineWidth = 5;
+    ctx.strokeRect(B + 6, B + 6, w - 2 * B - 12, h - 2 * B - 12);
+    ctx.strokeStyle = gold;
+    ctx.lineWidth = 3;
+    ctx.strokeRect(4, 4, w - 8, h - 8);
+    ctx.strokeRect(B - 3, B - 3, w - 2 * B + 6, h - 2 * B + 6);
+    // scattered small flowers over the field
+    for (let i = 0; i < 160; i++) {
+      const x = B + 20 + r() * (w - 2 * B - 40);
+      const y = B + 20 + r() * (h - 2 * B - 40);
+      ctx.fillStyle = [ivory, gold, navy, '#2f5d4a'][Math.floor(r() * 4)];
+      ctx.globalAlpha = 0.75;
+      for (let p = 0; p < 4; p++) {
+        ctx.beginPath();
+        ctx.arc(x + Math.cos(p * 1.57) * 5, y + Math.sin(p * 1.57) * 5, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+    // corner pieces
+    const corner = (cx, cy, sx, sy) => {
+      ctx.fillStyle = navy;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + sx * 190, cy);
+      ctx.quadraticCurveTo(cx + sx * 120, cy + sy * 40, cx + sx * 110, cy + sy * 110);
+      ctx.quadraticCurveTo(cx + sx * 40, cy + sy * 120, cx, cy + sy * 170);
+      ctx.fill();
+      ctx.strokeStyle = gold;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    };
+    corner(B + 12, B + 12, 1, 1);
+    corner(w - B - 12, B + 12, -1, 1);
+    corner(B + 12, h - B - 12, 1, -1);
+    corner(w - B - 12, h - B - 12, -1, -1);
+    // central medallion: a stepped lozenge with pendants, a star inside
+    const cx = w / 2;
+    const cy = h / 2;
+    const lozenge = (rx, ry, fill) => {
+      ctx.fillStyle = fill;
+      ctx.beginPath();
+      for (let k = 0; k < 16; k++) {
+        const a = (k / 16) * Math.PI * 2;
+        const rr = k % 2 ? 0.82 : 1;
+        ctx.lineTo(cx + Math.cos(a) * rx * rr, cy + Math.sin(a) * ry * rr);
+      }
+      ctx.closePath();
+      ctx.fill();
+    };
+    lozenge(250, 170, ivory);
+    lozenge(238, 160, navy);
+    lozenge(170, 110, red);
+    lozenge(120, 78, gold);
+    lozenge(70, 46, navy);
+    for (const s of [-1, 1]) {
+      ctx.fillStyle = navy;
+      ctx.fillRect(cx + s * 250 - 22, cy - 22, 44, 44);
+      ctx.fillStyle = gold;
+      ctx.fillRect(cx + s * 250 - 10, cy - 10, 20, 20);
+    }
+    // wear and wool texture
+    for (let i = 0; i < 9000; i++) {
+      ctx.fillStyle = `rgba(${r() > 0.5 ? '0,0,0' : '255,240,220'},${r() * 0.06})`;
+      ctx.fillRect(r() * w, r() * h, 2, 2);
+    }
+  });
+}
+function buildRug(room, item) {
+  const w = item.w ?? 6;
+  const d = item.d ?? 4;
+  const top = new THREE.MeshStandardMaterial({ map: rugTexture(`rug${item.x},${item.z}`), roughness: 1 });
+  const side = new THREE.MeshStandardMaterial({ color: 0x5a1815, roughness: 1 });
+  const rug = new THREE.Mesh(new THREE.BoxGeometry(w, 0.012, d), [side, side, top, side, side, side]);
+  rug.position.set(room.x + (item.x ?? 0), 0.006, room.z + (item.z ?? 0));
+  rug.rotation.y = THREE.MathUtils.degToRad(item.rotation ?? 0);
+  rug.receiveShadow = true;
+  // fringe along the two short ends
+  const fringeTex = canvasTexture(256, 32, (ctx, cw, ch) => {
+    for (let x = 0; x < cw; x += 3) {
+      ctx.fillStyle = `rgba(235,224,198,${0.7 + Math.random() * 0.3})`;
+      ctx.fillRect(x, 0, 2, ch - Math.random() * 8);
+    }
+  });
+  fringeTex.repeat.set(d / 1.5, 1);
+  fringeTex.wrapS = THREE.RepeatWrapping;
+  const fringeMat = new THREE.MeshStandardMaterial({ map: fringeTex, transparent: true, alphaTest: 0.3, roughness: 1, side: THREE.DoubleSide });
+  for (const s of [-1, 1]) {
+    const f = new THREE.Mesh(new THREE.PlaneGeometry(d, 0.1), fringeMat);
+    f.rotation.set(-Math.PI / 2, 0, Math.PI / 2);
+    f.position.set((s * (w + 0.1)) / 2, 0.004, 0);
+    rug.add(f);
+  }
+  parent.add(rug);
+}
+
+// Fabric exhibition banner hanging from a brass rod on two ceiling cables.
+function bannerTexture(title, subtitle, accent) {
+  return canvasTexture(512, 1104, (ctx, w, h) => {
+    const g = ctx.createLinearGradient(0, 0, w, 0);
+    g.addColorStop(0, shade(accent, -0.18));
+    g.addColorStop(0.5, accent);
+    g.addColorStop(1, shade(accent, -0.18));
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#d6b25e';
+    ctx.fillRect(40, 70, w - 80, 4);
+    ctx.fillRect(40, h - 110, w - 80, 4);
+    ctx.textAlign = 'center';
+    ctx.font = `600 26px ${FONT}`;
+    ctx.fillText('AN EXHIBITION', w / 2, 130);
+    ctx.fillStyle = '#f6efe0';
+    ctx.font = `bold 92px Georgia, "Times New Roman", serif`;
+    const words = title.toUpperCase().split(' ');
+    words.forEach((word, i) => ctx.fillText(word, w / 2, 280 + i * 108, w - 60));
+    const below = 280 + words.length * 108;
+    ctx.fillStyle = '#d6b25e';
+    ctx.beginPath();
+    ctx.moveTo(w / 2, below - 20);
+    ctx.lineTo(w / 2 + 16, below - 4);
+    ctx.lineTo(w / 2, below + 12);
+    ctx.lineTo(w / 2 - 16, below - 4);
+    ctx.fill();
+    ctx.fillRect(w / 2 - 120, below - 5, 90, 2);
+    ctx.fillRect(w / 2 + 30, below - 5, 90, 2);
+    ctx.fillStyle = '#efe4c8';
+    ctx.font = `italic 34px Georgia, "Times New Roman", serif`;
+    wrapText(ctx, subtitle, w - 90).forEach((line, i) => ctx.fillText(line, w / 2, below + 80 + i * 46));
+    // woven texture
+    for (let y = 0; y < h; y += 3) {
+      ctx.fillStyle = `rgba(0,0,0,${0.03 + (y % 6 ? 0.02 : 0)})`;
+      ctx.fillRect(0, y, w, 1);
+    }
+  });
+}
+function buildBanner(room, item) {
+  const W = 1.3;
+  const H = 2.8;
+  const top = room.height - 0.6;
+  const g = new THREE.Group();
+  g.position.set(room.x + (item.x ?? 0), 0, room.z + (item.z ?? 0));
+  g.rotation.y = THREE.MathUtils.degToRad(item.rotation ?? 0);
+  // gentle folds in the cloth
+  const geo = new THREE.PlaneGeometry(W, H, 24, 1);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) pos.setZ(i, Math.sin(pos.getX(i) * 11) * 0.012);
+  geo.computeVertexNormals();
+  const cloth = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: bannerTexture(item.title ?? '', item.subtitle ?? '', item.color ?? '#6e1b21'), roughness: 0.85, side: THREE.DoubleSide }));
+  cloth.position.y = top - 0.04 - H / 2;
+  cloth.castShadow = true;
+  g.add(cloth);
+  const rod = piece(g, new THREE.CylinderGeometry(0.018, 0.018, W + 0.16, 12).rotateZ(Math.PI / 2), MAT.gilt, 0, top, 0);
+  rod.castShadow = true;
+  for (const s of [-1, 1]) {
+    piece(g, new THREE.SphereGeometry(0.035, 14, 10), MAT.gilt, s * (W / 2 + 0.1), top, 0);
+    rodBetween(g, new THREE.Vector3(s * (W / 2 - 0.05), top, 0), new THREE.Vector3(s * (W / 2 - 0.05), room.height, 0), 0.003, MAT.metal);
+  }
+  piece(g, new THREE.CylinderGeometry(0.012, 0.012, W, 8).rotateZ(Math.PI / 2), MAT.gilt, 0, top - 0.04 - H, 0); // weighted hem
+  parent.add(g);
+}
+
+// Gallery name in big cut vinyl letters on the colored feature wall, the way museums title a room.
+function buildWallTitle(room) {
+  const side = room.featureWall ?? 'north';
+  const [number, name] = room.name.includes(': ') ? room.name.split(': ') : ['', room.name];
+  const c = new THREE.Color(room.accent ?? '#888');
+  const light = c.r * 0.3 + c.g * 0.59 + c.b * 0.11 > 0.6;
+  const ink = light ? '#1d1a17' : '#ffffff';
+  const tex = canvasTexture(2048, 400, (ctx, w, h) => {
+    ctx.fillStyle = ink;
+    ctx.textAlign = 'center';
+    ctx.font = `bold 72px ${FONT}`;
+    if ('letterSpacing' in ctx) ctx.letterSpacing = '18px';
+    ctx.fillText(number.toUpperCase(), w / 2, 92);
+    if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+    ctx.font = `bold 210px Georgia, "Times New Roman", serif`;
+    ctx.fillText(name, w / 2, 330, w - 40);
+  });
+  const width = Math.min(7, wallLength(room, side) - 2);
+  const title = new THREE.Mesh(
+    new THREE.PlaneGeometry(width, width * (400 / 2048)),
+    // matte vinyl, a little self-lit so it stays crisp against the colored wall
+    new THREE.MeshStandardMaterial({ map: tex, emissiveMap: tex, emissive: 0x777777, transparent: true, roughness: 0.55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }),
+  );
+  title.position.z = 0.006;
+  const holder = new THREE.Group();
+  holder.add(title);
+  mountOnWall(room, { wall: side, at: 0 }, holder, room.height - 0.78);
 }
 
 // ---------------------------------------------------------------- the rotunda

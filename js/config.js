@@ -37,6 +37,8 @@
 //    decor     furniture: [{ type, x, z, rotation }]  (rotation in degrees; the front faces south at 0)
 //              types: bench, settee, plant, palm, monstera, admissions (desk), clock, coatstand, guide (map easel),
 //              donations, brochures, and stanchions: { type:'stanchions', points:[[x, z], [x, z], ...] } (a rope line)
+//              rug: { type:'rug', x, z, w, d, rotation } (a Persian rug, nothing to bump into)
+//              banner: { type:'banner', x, z, rotation, title, subtitle, color } (hangs from the ceiling)
 //              x/z are relative to the room's center.
 //
 //  EXHIBIT TYPES
@@ -128,6 +130,13 @@ export const ROOMS = [
       { type: 'donations', x: 6.9, z: 3 },
       { type: 'settee', x: -4.5, z: 3.5, rotation: 90 },
       { type: 'settee', x: 4.5, z: 3.5, rotation: 90 },
+      { type: 'rug', x: 0, z: 3.3, w: 6.4, d: 3.8 },
+      // exhibition banners hanging either side of the way into the rotunda
+      { type: 'banner', x: -5.6, z: -6.45, title: 'What Trying Costs', subtitle: 'Debt and its price in Charles Dickens\'s David Copperfield' },
+      {
+        type: 'banner', x: 5.6, z: -6.45, color: '#1f3b2d', title: 'Four Galleries',
+        subtitle: 'The Price Up Front · Ways to Pay · What Failure Takes · Same Price, Different Weight',
+      },
     ],
   },
 
@@ -140,6 +149,7 @@ export const ROOMS = [
     floor: 'wood', floorColor: '#a8774d', accent: '#c9a24a',
     victorian: true, wallpaper: '#5e1a1f', wainscot: true,
     exhibits: [],
+    decor: [{ type: 'rug', x: 0, z: 0, w: 2.9, d: 1.9, rotation: 90 }],
   },
 
   // ------------------------------------------------------------- ROTUNDA
