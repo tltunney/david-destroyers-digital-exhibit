@@ -58,6 +58,11 @@ export const MUSEUM = {
   music: { enabled: true, volume: 0.3, file: '' },
 };
 
+// The passage text on the wall panels is hidden while the team finalizes the wording.
+// Panels show their titles with "Text coming soon". Set this to true to show the passages again.
+const SHOW_PASSAGES = false;
+const passage = (text) => (SHOW_PASSAGES ? text : '');
+
 // Full thesis, shown in the Main Hall.
 const THESIS =
   'In David Copperfield, debt works as an invisible filter that decides not who can succeed but what each attempt costs: ' +
@@ -85,7 +90,7 @@ export const ROOMS = [
     woodWall: 'north', ceiling: 'wood', entrance: 'south',
     doors: { north: [{ at: 0, width: 5 }] },
     exhibits: [
-      { type: 'panel', wall: 'west', at: 0, width: 3.4, height: 2.2, title: 'What Trying Costs', text: PITCH },
+      { type: 'panel', wall: 'west', at: 0, width: 3.4, height: 2.2, title: 'What Trying Costs', text: passage(PITCH) },
       {
         type: 'panel', wall: 'east', at: 0, width: 3.4, height: 2.2,
         title: 'About This Project',
@@ -122,7 +127,7 @@ export const ROOMS = [
         title: 'David Copperfield', subtitle: 'Narrator and hero of Charles Dickens\'s David Copperfield (1849–50)',
         description: 'Add your introduction to David here.',
       },
-      { type: 'panel', wall: 'north', at: 0, width: 9, height: 4.4, y: 4, title: 'Thesis', text: THESIS },
+      { type: 'panel', wall: 'north', at: 0, width: 9, height: 4.4, y: 4, title: 'Thesis', text: passage(THESIS) },
       {
         type: 'panel', wall: 'south', at: -8, width: 3.4, height: 2.4,
         title: 'The Galleries',
@@ -132,7 +137,7 @@ export const ROOMS = [
           'North-west: 3. What Failure Takes\n' +
           'North-east: 4. Same Price, Different Weight',
       },
-      { type: 'panel', wall: 'south', at: 8, width: 3.4, height: 2.4, title: 'The Big Idea', text: PITCH },
+      { type: 'panel', wall: 'south', at: 8, width: 3.4, height: 2.4, title: 'The Big Idea', text: passage(PITCH) },
       empty('west', -7), empty('west', 7),
       empty('east', -7), empty('east', 7),
     ],
@@ -159,9 +164,11 @@ export const ROOMS = [
         type: 'panel', wall: 'east', at: -5, width: 3.2, height: 2.2,
         title: 'The Price Up Front',
         text:
-          'What you pay before knowing if it will work, usually with no refund.\n\n' +
-          'In Dickens: Betsey pays David\'s premium.\n' +
-          'Today: tuition, exam and licensing fees, unpaid internships.',
+          passage(
+            'What you pay before knowing if it will work, usually with no refund.\n\n' +
+            'In Dickens: Betsey pays David\'s premium.\n' +
+            'Today: tuition, exam and licensing fees, unpaid internships.',
+          ),
       },
       empty('north', -5), empty('north', 4),
       empty('west', 0, { width: 3.2, height: 2.2 }),
@@ -182,10 +189,12 @@ export const ROOMS = [
         type: 'panel', wall: 'west', at: -5, width: 3.2, height: 2.4,
         title: 'Ways to Pay',
         text:
-          'The route available to you, and what each one costs.\n\n' +
-          '• Patron or family pays\n• Status or merit pays\n• Borrow\n• Someone else\'s credit\n' +
-          '• Pay with time\n• Performance or deception\n• Leverage over others\n\n' +
-          'Today: parents, loans, scholarships, working through school.',
+          passage(
+            'The route available to you, and what each one costs.\n\n' +
+            '• Patron or family pays\n• Status or merit pays\n• Borrow\n• Someone else\'s credit\n' +
+            '• Pay with time\n• Performance or deception\n• Leverage over others\n\n' +
+            'Today: parents, loans, scholarships, working through school.',
+          ),
       },
       empty('north', -4), empty('north', 5),
       empty('east', 0, { width: 3.2, height: 2.2 }),
@@ -206,9 +215,11 @@ export const ROOMS = [
         type: 'panel', wall: 'south', at: -4.5, width: 2.6, height: 2,
         title: 'What Failure Takes',
         text:
-          'What a mistake takes from you.\n\n' +
-          'In Dickens: Betsey catches David; no one catches Heep or Micawber.\n' +
-          'Today: the same missed payment, with or without savings or family behind it.',
+          passage(
+            'What a mistake takes from you.\n\n' +
+            'In Dickens: Betsey catches David; no one catches Heep or Micawber.\n' +
+            'Today: the same missed payment, with or without savings or family behind it.',
+          ),
       },
       empty('west', -5, { width: 1.6, height: 2.2 }), empty('west', 3, { width: 1.6, height: 2.2 }),
       empty('east', -5, { width: 1.6, height: 2.2 }), empty('east', 3, { width: 1.6, height: 2.2 }),
@@ -229,19 +240,23 @@ export const ROOMS = [
         type: 'panel', wall: 'south', at: -4.5, width: 2.6, height: 2.2,
         title: 'Same Price, Different Weight',
         text:
-          '• The price can look fair on paper, since everyone faces the same number.\n' +
-          '• For David, it\'s one cost among many, covered by a patron. For someone without a cushion, it means ' +
-          'borrowing, years of work, or a risky route.\n' +
-          '• The price comes before you know whether it will pay off, so the buyer carries all the risk.',
+          passage(
+            '• The price can look fair on paper, since everyone faces the same number.\n' +
+            '• For David, it\'s one cost among many, covered by a patron. For someone without a cushion, it means ' +
+            'borrowing, years of work, or a risky route.\n' +
+            '• The price comes before you know whether it will pay off, so the buyer carries all the risk.',
+          ),
       },
       {
         type: 'panel', wall: 'south', at: 4.5, width: 2.6, height: 2.2,
         title: 'Objections',
         text:
-          '"A fixed price is neutral." The price is equal, but its weight isn\'t.\n' +
-          '"Merit and scholarships pay the price." They do, but they must be kept, and losing one costs more for people with no cushion.\n' +
-          '"Heep is guilty." Yes. Poverty doesn\'t excuse him; it narrows his routes and removes his safety net.\n' +
-          '"Today there are loans, bankruptcy, and aid." Those tools only help if you understand them.',
+          passage(
+            '"A fixed price is neutral." The price is equal, but its weight isn\'t.\n' +
+            '"Merit and scholarships pay the price." They do, but they must be kept, and losing one costs more for people with no cushion.\n' +
+            '"Heep is guilty." Yes. Poverty doesn\'t excuse him; it narrows his routes and removes his safety net.\n' +
+            '"Today there are loans, bankruptcy, and aid." Those tools only help if you understand them.',
+          ),
       },
       empty('west', -5), empty('west', 3),
       empty('east', -5), empty('east', 3),

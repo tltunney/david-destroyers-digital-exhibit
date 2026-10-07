@@ -51,7 +51,8 @@ scene.background = new THREE.Color(0x0e0e12);
 scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
 scene.environmentIntensity = 0.5;
 
-const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 200);
+// near/far kept tight so phones can tell apart surfaces that sit close together (art, mat, wall)
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.12, 120);
 camera.rotation.order = 'YXZ';
 
 const controls = new PointerLockControls(camera, document.body);
@@ -312,9 +313,9 @@ function decal(map, w, h, { additive = false, opacity = 1, layer = 1 } = {}) {
 function addWallLighting(group, w, h, washWidth = w + 1.8) {
   const scale = 1 / (1 - 2 * SHADOW_INSET);
   const shadow = decal(SHADOW_TEX, w * scale, h * scale, { opacity: 0.5, layer: 1 });
-  shadow.position.set(0, -0.05, 0.004);
+  shadow.position.set(0, -0.05, 0.012);
   const wash = decal(WASH_TEX, washWidth, h + 2.6, { additive: true, opacity: 0.42, layer: 2 });
-  wash.position.set(0, 0.35, 0.008);
+  wash.position.set(0, 0.35, 0.022);
   group.add(shadow, wash);
 }
 
@@ -425,6 +426,12 @@ function textPanelTexture(title, text, widthMeters, aspect, accent) {
       if (lines.length * size * 1.4 <= bottom - top + size) break;
     }
     ctx.fillStyle = '#d6cfc2';
+    if (!text) {
+      ctx.font = `italic ${36 * k}px ${FONT}`;
+      ctx.fillStyle = '#8f877c';
+      ctx.fillText('Text coming soon', 90 * k, top);
+      return;
+    }
     lines.forEach((line, i) => ctx.fillText(line, 90 * k, top + i * size * 1.4));
   });
 }
@@ -473,8 +480,12 @@ function signTexture(text, accent) {
 }
 
 // Material that stays readable regardless of lighting.
-function displayMaterial(map) {
-  return new THREE.MeshStandardMaterial({ map, emissiveMap: map, emissive: 0xffffff, emissiveIntensity: 0.35, roughness: 0.85 });
+// `layer` nudges it in front of whatever it sits on, so the two never flicker on phones.
+function displayMaterial(map, layer = 0) {
+  return new THREE.MeshStandardMaterial({
+    map, emissiveMap: map, emissive: 0xffffff, emissiveIntensity: 0.45, roughness: 0.85,
+    polygonOffset: layer > 0, polygonOffsetFactor: -layer, polygonOffsetUnits: -layer,
+  });
 }
 
 function loadImage(url, material) {
@@ -762,18 +773,18 @@ function buildPainting(room, ex) {
 
   // beveled oak frame around a white mat, gallery style
   const frame = new THREE.Mesh(frameGeometry(w + 0.4, h + 0.4, w + 0.28, h + 0.28, 0.035), MAT.frame);
-  frame.position.z = 0.012;
+  frame.position.z = 0.03; // back of the frame sits just off the wall
   frame.castShadow = true;
   const mat = new THREE.Mesh(new THREE.PlaneGeometry(w + 0.3, h + 0.3), MAT.passepartout);
-  mat.position.z = 0.03;
-  const artMat = displayMaterial(ex.title || ex.image ? artTexture(ex.title || 'untitled', room.accent ?? '#888') : emptySlotTexture());
+  mat.position.z = 0.05;
+  const artMat = displayMaterial(ex.title || ex.image ? artTexture(ex.title || 'untitled', room.accent ?? '#888') : emptySlotTexture(), 2);
   if (ex.image) loadImage(ex.image, artMat);
   const art = new THREE.Mesh(new THREE.PlaneGeometry(w, h), artMat);
-  art.position.z = 0.034;
+  art.position.z = 0.062;
 
-  const label = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.28), displayMaterial(labelTexture(ex.title ?? '', ex.subtitle)));
-  label.position.set(w / 2 + 0.75, -h / 2 + 0.14, 0.012);
-  if (w / 2 + 1.1 > 3) label.position.set(0, -h / 2 - 0.4, 0.012); // big paintings: label underneath
+  const label = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.28), displayMaterial(labelTexture(ex.title ?? '', ex.subtitle), 1));
+  label.position.set(w / 2 + 0.75, -h / 2 + 0.14, 0.03);
+  if (w / 2 + 1.1 > 3) label.position.set(0, -h / 2 - 0.4, 0.03); // big paintings: label underneath
 
   group.add(frame, mat, art);
   if (ex.title) group.add(label);
@@ -790,11 +801,11 @@ function buildPanel(room, ex) {
     new THREE.BoxGeometry(w, h, 0.05),
     [MAT.trim, MAT.trim, MAT.trim, MAT.trim, displayMaterial(textPanelTexture(ex.title ?? '', ex.text, w, w / h, room.accent ?? '#d9a441')), MAT.trim],
   );
-  panel.position.z = 0.035; // stands off the wall on hidden spacers
+  panel.position.z = 0.045; // stands off the wall on hidden spacers
   group.add(panel);
   addWallLighting(group, w, h, w + 1);
   mountOnWall(room, ex, group, ex.y ?? 1.9);
-  makeInteractive([panel], { ...ex, description: ex.description ?? ex.text }, room);
+  makeInteractive([panel], { ...ex, description: ex.description || ex.text || 'Text coming soon.' }, room);
 }
 
 // ---------------------------------------------------------------- the bust
