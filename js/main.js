@@ -63,6 +63,7 @@ const colliders = [];     // { minX, maxX, minZ, maxZ } boxes the player can't w
 const interactables = []; // meshes with userData.exhibit
 const blockers = [];      // walls, so exhibits can't be clicked through them
 const spinners = [];      // objects that slowly rotate
+const animators = [];     // functions called every frame with the time in seconds
 
 for (const room of ROOMS) {
   room.height ??= DEFAULT_HEIGHT;
@@ -591,6 +592,16 @@ const MAT = {
   plasterwork: new THREE.MeshStandardMaterial({ ...surfaceMaps('plaster', '#efe6d4', 1, 1), roughness: 1 }),
   velvet: new THREE.MeshStandardMaterial({ ...surfaceMaps('tufted', '#1d3b2a', 4.4, 1.5), roughness: 1 }),
   gaslight: new THREE.MeshBasicMaterial({ color: new THREE.Color(2.4, 1.7, 0.95) }),
+  counterTop: new THREE.MeshStandardMaterial({ ...surfaceMaps('marble', '#e6dfd2', 2, 0.5), roughness: 1 }),
+  caseGlass: new THREE.MeshStandardMaterial({ color: 0xeef4f2, roughness: 0.03, metalness: 0.9, transparent: true, opacity: 0.24, depthWrite: false }),
+  felt: new THREE.MeshStandardMaterial({ color: 0x23402f, roughness: 0.95 }),
+  paper: new THREE.MeshStandardMaterial({ color: 0xf3ecdc, roughness: 0.9 }),
+  bookCover: new THREE.MeshStandardMaterial({ color: 0x5c1a1e, roughness: 0.6 }),
+  bankerGreen: new THREE.MeshStandardMaterial({ color: 0x1f6b3a, emissive: 0x0b3a1c, roughness: 0.15, side: THREE.DoubleSide }),
+  ceramic: new THREE.MeshStandardMaterial({ color: 0x2c5a4c, roughness: 0.15 }),
+  palm: new THREE.MeshStandardMaterial({ color: 0x3e7a3b, roughness: 0.7, side: THREE.DoubleSide }),
+  trunk: new THREE.MeshStandardMaterial({ color: 0x6b4e33, roughness: 0.95 }),
+  coat: new THREE.MeshStandardMaterial({ color: 0x1f2433, roughness: 0.9 }),
   // brighter than white so the light strips glow (and bloom) after tone mapping
   light: new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 2.85, 2.6) }),
   sky: new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 1.8, 2.1) }),
@@ -630,6 +641,7 @@ function buildRoom(room) {
     if (ex.type === 'painting') buildPainting(room, ex);
     else if (ex.type === 'panel') buildPanel(room, ex);
     else if (ex.type === 'pedestal') buildPedestal(room, ex);
+    else if (ex.type === 'case') buildCase(room, ex);
     else console.warn(`Unknown exhibit type "${ex.type}" in room "${room.id}"`);
   }
   for (const item of room.decor ?? []) buildDecor(room, item);
@@ -761,7 +773,7 @@ function buildWall(room, side) {
     addBox(...top, room.victorian ? MAT.mahogany : MAT.oak, tp.x, DOOR_HEIGHT + 0.05, tp.z);
 
     // sign above the door naming the room it leads to
-    if (door.to) {
+    if (door.to && !room.passage) {
       const sp = wallPoint(room, side, door.at, HALF_WALL + 0.02);
       const signW = Math.max(door.width, 3.2);
       const sign = new THREE.Mesh(
@@ -1250,7 +1262,308 @@ function buildRopeBarrier(room, cx, cz, size) {
   addCollider(cx, cz, size + 0.3, size + 0.3);
 }
 
+// ---------------------------------------------------------------- museum furniture
+// Small helper: add a mesh to a group at a position.
+function piece(group, geometry, material, x = 0, y = 0, z = 0) {
+  const m = new THREE.Mesh(geometry, material);
+  m.position.set(x, y, z);
+  group.add(m);
+  return m;
+}
+
+// Gold lettering on a dark plaque (for the admissions desk and donation box).
+function plaqueTexture(text) {
+  return canvasTexture(512, 104, (ctx, w, h) => {
+    ctx.fillStyle = '#1d1712';
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = '#b8913a';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(8, 8, w - 16, h - 16);
+    ctx.fillStyle = '#d9b45a';
+    ctx.font = `600 46px Georgia, "Times New Roman", serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, w / 2, h / 2 + 2, w - 40);
+  });
+}
+
+// Admissions desk: paneled mahogany counter with a marble top, a banker's lamp, a guest book,
+// a service bell, and a chair for the attendant. The front faces the room's visitors (+z).
+function buildAdmissionsDesk(g) {
+  const d = new THREE.Group();
+  d.position.z = 0.25; // center the whole desk-plus-chair footprint on the group
+  g.add(d);
+  const panel = new THREE.MeshStandardMaterial({ ...surfaceMaps('wainscot', '#5a2a1a', 3.6, 1.05 / 1.1), roughness: 1 });
+  piece(d, new THREE.BoxGeometry(3.6, 1.05, 0.08), panel, 0, 0.525, 0.55);
+  for (const sx of [-1, 1]) piece(d, new THREE.BoxGeometry(0.08, 1.05, 1.1), MAT.mahogany, sx * 1.76, 0.525, 0.04);
+  piece(d, new THREE.BoxGeometry(3.64, 0.12, 0.1), MAT.mahogany, 0, 0.06, 0.6);
+  piece(d, new RoundedBoxGeometry(3.86, 0.06, 0.62, 2, 0.02), MAT.counterTop, 0, 1.08, 0.42);
+  piece(d, new THREE.BoxGeometry(3.44, 0.04, 0.7), MAT.mahogany, 0, 0.76, 0.05);
+  piece(d, new THREE.PlaneGeometry(1.3, 0.26), new THREE.MeshBasicMaterial({ map: plaqueTexture('ADMISSIONS') }), 0, 0.8, 0.595);
+  // banker's lamp
+  piece(d, new THREE.CylinderGeometry(0.09, 0.1, 0.03, 24), MAT.gilt, -1.25, 1.125, 0.4);
+  piece(d, new THREE.CylinderGeometry(0.012, 0.012, 0.26, 8), MAT.gilt, -1.25, 1.26, 0.4);
+  const shade = piece(d, new THREE.CylinderGeometry(0.075, 0.075, 0.42, 24, 1, true, Math.PI / 2, Math.PI), MAT.bankerGreen, -1.25, 1.42, 0.4);
+  shade.rotation.z = Math.PI / 2;
+  piece(d, new THREE.BoxGeometry(0.36, 0.015, 0.04), MAT.gaslight, -1.25, 1.385, 0.4);
+  // guest book, open
+  piece(d, new THREE.BoxGeometry(0.5, 0.02, 0.34), MAT.bookCover, 0.45, 1.12, 0.42);
+  for (const sx of [-1, 1]) {
+    const page = piece(d, new THREE.BoxGeometry(0.23, 0.02, 0.31), MAT.paper, 0.45 + sx * 0.12, 1.14, 0.42);
+    page.rotation.z = sx * 0.06;
+  }
+  // service bell
+  piece(d, new THREE.CylinderGeometry(0.06, 0.06, 0.012, 24), MAT.mahogany, 1.25, 1.117, 0.45);
+  piece(d, new THREE.SphereGeometry(0.05, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), MAT.gilt, 1.25, 1.123, 0.45);
+  // attendant's chair
+  piece(d, new THREE.BoxGeometry(0.5, 0.08, 0.48), MAT.leather, 0, 0.5, -0.8);
+  piece(d, new THREE.BoxGeometry(0.5, 0.7, 0.06), MAT.mahogany, 0, 0.9, -1.03);
+  const leg = new THREE.CylinderGeometry(0.025, 0.02, 0.46, 10);
+  for (const [lx, lz] of [[-0.22, -0.6], [0.22, -0.6], [-0.22, -1], [0.22, -1]]) piece(d, leg, MAT.mahogany, lx, 0.23, lz);
+  return [3.9, 1.75];
+}
+
+// Longcase (grandfather) clock with a swinging pendulum and hands that show the real time.
+const CLOCK_FACE = canvasTexture(256, 256, (ctx, w, h) => {
+  ctx.fillStyle = '#f2ead8';
+  ctx.beginPath();
+  ctx.arc(w / 2, h / 2, w / 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#1b1712';
+  ctx.font = '600 26px Georgia, serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const numerals = ['XII', 'I', 'II', 'III', 'IIII', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI'];
+  numerals.forEach((n, k) => {
+    const a = (k / 12) * Math.PI * 2;
+    ctx.fillText(n, w / 2 + Math.sin(a) * 96, h / 2 - Math.cos(a) * 96);
+  });
+  for (let k = 0; k < 60; k++) {
+    const a = (k / 60) * Math.PI * 2;
+    const r1 = k % 5 ? 118 : 112;
+    ctx.fillRect(w / 2 + Math.sin(a) * r1 - 1, h / 2 - Math.cos(a) * r1 - 1, 2, 2);
+  }
+});
+function buildClock(g) {
+  const wood = MAT.mahogany;
+  piece(g, new THREE.BoxGeometry(0.62, 0.5, 0.42), wood, 0, 0.25, 0);
+  piece(g, new THREE.BoxGeometry(0.48, 1.15, 0.32), wood, 0, 1.075, 0);
+  piece(g, new THREE.BoxGeometry(0.28, 0.82, 0.02), MAT.trim, 0, 1.08, 0.16);
+  const glass = piece(g, new THREE.PlaneGeometry(0.28, 0.82), MAT.caseGlass, 0, 1.08, 0.175);
+  glass.renderOrder = 1;
+  const pendulum = new THREE.Group();
+  pendulum.position.set(0, 1.45, 0.17);
+  piece(pendulum, new THREE.BoxGeometry(0.012, 0.55, 0.006), MAT.gilt, 0, -0.275, 0);
+  piece(pendulum, new THREE.CylinderGeometry(0.07, 0.07, 0.015, 24).rotateX(Math.PI / 2), MAT.gilt, 0, -0.56, 0);
+  g.add(pendulum);
+  animators.push((t) => {
+    pendulum.rotation.z = 0.12 * Math.sin(t * Math.PI); // one swing per second
+  });
+  piece(g, new THREE.BoxGeometry(0.62, 0.62, 0.42), wood, 0, 1.96, 0);
+  piece(g, new THREE.CircleGeometry(0.2, 48), new THREE.MeshStandardMaterial({ map: CLOCK_FACE, roughness: 0.5 }), 0, 1.96, 0.212);
+  piece(g, new THREE.TorusGeometry(0.205, 0.016, 10, 48), MAT.gilt, 0, 1.96, 0.215);
+  const hour = piece(g, new THREE.BoxGeometry(0.014, 0.1, 0.004).translate(0, 0.05, 0), MAT.trim, 0, 1.96, 0.222);
+  const minute = piece(g, new THREE.BoxGeometry(0.009, 0.15, 0.004).translate(0, 0.075, 0), MAT.trim, 0, 1.96, 0.226);
+  animators.push(() => {
+    const now = new Date();
+    const m = now.getMinutes() + now.getSeconds() / 60;
+    minute.rotation.z = -(m / 60) * Math.PI * 2;
+    hour.rotation.z = -(((now.getHours() % 12) + m / 60) / 12) * Math.PI * 2;
+  });
+  const crown = piece(g, new THREE.CylinderGeometry(0.31, 0.31, 0.42, 32, 1, false, Math.PI / 2, Math.PI).rotateX(Math.PI / 2), wood, 0, 2.27, 0);
+  crown.scale.y = 0.45;
+  for (const fx of [-0.26, 0, 0.26]) piece(g, new THREE.SphereGeometry(0.035, 12, 8), MAT.gilt, fx, fx ? 2.32 : 2.44, 0.1);
+  return [0.64, 0.44];
+}
+
+// Kentia palm in a glazed ceramic urn, a Victorian parlor favorite.
+function buildPalm(g, seed) {
+  const urn = [[0, 0], [0.2, 0], [0.24, 0.06], [0.2, 0.14], [0.27, 0.42], [0.31, 0.56], [0.28, 0.6], [0, 0.6]].map(([r, y]) => new THREE.Vector2(r, y));
+  piece(g, new THREE.LatheGeometry(urn, 32), MAT.ceramic);
+  piece(g, new THREE.TorusGeometry(0.29, 0.018, 8, 32).rotateX(Math.PI / 2), MAT.gilt, 0, 0.59, 0);
+  piece(g, new THREE.CylinderGeometry(0.035, 0.05, 1.1, 10), MAT.trunk, 0, 1.1, 0);
+  const r = seededRandom(seed);
+  const frond = new THREE.SphereGeometry(1, 16, 8);
+  for (let k = 0; k < 13; k++) {
+    const holder = new THREE.Group();
+    holder.position.y = 1.55 + r() * 0.2;
+    holder.rotation.y = (k / 13) * Math.PI * 2 + r() * 0.4;
+    const len = 0.55 + r() * 0.35;
+    const leaf = piece(holder, frond, MAT.palm, 0, 0, len);
+    leaf.scale.set(0.13, 0.012, len);
+    holder.rotation.x = 0.15 + r() * 0.65; // fronds arch outward and droop
+    g.add(holder);
+  }
+  return [0.7, 0.7];
+}
+
+// Bentwood hall stand with a coat hanging on it and an umbrella in the brass stand.
+function buildCoatStand(g) {
+  piece(g, new THREE.CylinderGeometry(0.22, 0.26, 0.05, 24), MAT.mahogany, 0, 0.025, 0);
+  piece(g, new THREE.CylinderGeometry(0.028, 0.035, 1.85, 12), MAT.mahogany, 0, 0.95, 0);
+  piece(g, new THREE.SphereGeometry(0.05, 12, 8), MAT.mahogany, 0, 1.9, 0);
+  for (let k = 0; k < 6; k++) {
+    const hook = piece(g, new THREE.CylinderGeometry(0.012, 0.012, 0.22, 8), MAT.gilt, 0, 1.72, 0);
+    hook.rotation.set(0.8, (k / 6) * Math.PI * 2, 0, 'YXZ');
+    hook.position.set(Math.sin((k / 6) * Math.PI * 2) * 0.07, 1.74, Math.cos((k / 6) * Math.PI * 2) * 0.07);
+  }
+  const coat = piece(g, new THREE.CylinderGeometry(0.1, 0.2, 0.85, 14), MAT.coat, 0.14, 1.32, 0.1);
+  coat.rotation.z = -0.08;
+  piece(g, new THREE.CylinderGeometry(0.11, 0.11, 0.5, 20, 1, true), MAT.gilt, 0.35, 0.25, -0.15);
+  piece(g, new THREE.CylinderGeometry(0.015, 0.015, 0.95, 8), MAT.trim, 0.35, 0.55, -0.15);
+  piece(g, new THREE.ConeGeometry(0.05, 0.35, 10), MAT.coat, 0.35, 0.68, -0.15);
+  return [0.75, 0.7];
+}
+
+// Floor easel with the museum guide: a map of the building with "you are here".
+function buildGuideEasel(g, room) {
+  const board = canvasTexture(512, 680, (ctx, w, h) => {
+    ctx.fillStyle = '#1f3a2e';
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = '#c29b45';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(14, 14, w - 28, h - 28);
+    ctx.fillStyle = '#e8d9b0';
+    ctx.font = `600 44px Georgia, serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText('MUSEUM GUIDE', w / 2, 80);
+    ctx.font = `italic 24px Georgia, serif`;
+    ctx.fillText('What Trying Costs', w / 2, 116);
+    const shapes = ROOMS.map((r) => ({ r, pts: outline(r) }));
+    const all = shapes.flatMap((sh) => sh.pts);
+    const minX = Math.min(...all.map((p) => p.x));
+    const maxX = Math.max(...all.map((p) => p.x));
+    const minZ = Math.min(...all.map((p) => p.z));
+    const maxZ = Math.max(...all.map((p) => p.z));
+    const scale = Math.min((w - 90) / (maxX - minX), (h - 230) / (maxZ - minZ));
+    const ox = (w - (maxX - minX) * scale) / 2;
+    const oy = 150;
+    const map = (p) => [ox + (p.x - minX) * scale, oy + (p.z - minZ) * scale];
+    for (const { r, pts } of shapes) {
+      ctx.beginPath();
+      pts.forEach((p, k) => (k ? ctx.lineTo(...map(p)) : ctx.moveTo(...map(p))));
+      ctx.closePath();
+      ctx.fillStyle = r.accent && r.attach ? r.accent : '#e8d9b0';
+      ctx.globalAlpha = r.attach ? 0.75 : 0.25;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = '#e8d9b0';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      if (r.attach) {
+        ctx.fillStyle = '#10201a';
+        ctx.font = '600 22px Georgia, serif';
+        ctx.fillText(r.name.match(/Gallery (\d)/)?.[1] ?? '', ...map({ x: r.x, z: r.z + 1 }));
+      }
+    }
+    const here = map({ x: room.x, z: room.z + 3 });
+    ctx.fillStyle = '#d9583b';
+    ctx.beginPath();
+    ctx.arc(...here, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#e8d9b0';
+    ctx.font = 'italic 20px Georgia, serif';
+    ctx.fillText('you are here', here[0], here[1] + 32);
+  });
+  for (const [lx, lz, tilt] of [[-0.35, 0.12, 0.12], [0.35, 0.12, -0.12]]) {
+    const leg = piece(g, new THREE.BoxGeometry(0.04, 1.75, 0.04), MAT.mahogany, lx, 0.86, lz);
+    leg.rotation.set(-0.12, 0, tilt);
+  }
+  const back = piece(g, new THREE.BoxGeometry(0.04, 1.6, 0.04), MAT.mahogany, 0, 0.78, -0.3);
+  back.rotation.x = 0.3;
+  piece(g, new THREE.BoxGeometry(0.85, 0.04, 0.08), MAT.mahogany, 0, 0.62, 0.1);
+  const sign = piece(g, new THREE.BoxGeometry(0.78, 1.04, 0.025), [MAT.mahogany, MAT.mahogany, MAT.mahogany, MAT.mahogany, displayMaterial(board), MAT.mahogany], 0, 1.18, 0.07);
+  sign.rotation.x = -0.12;
+  return [0.95, 0.75];
+}
+
+// Glass donation box on a mahogany stand.
+function buildDonationBox(g) {
+  piece(g, new THREE.BoxGeometry(0.42, 0.9, 0.42), MAT.mahogany, 0, 0.45, 0);
+  const box = piece(g, new THREE.BoxGeometry(0.38, 0.38, 0.38), MAT.caseGlass, 0, 1.09, 0);
+  box.renderOrder = 1;
+  piece(g, new THREE.BoxGeometry(0.4, 0.03, 0.4), MAT.gilt, 0, 1.295, 0);
+  const r = seededRandom('donations');
+  for (let k = 0; k < 9; k++) {
+    const note = piece(g, new THREE.BoxGeometry(0.14, 0.004, 0.065), MAT.felt, (r() - 0.5) * 0.25, 0.91 + k * 0.012, (r() - 0.5) * 0.25);
+    note.rotation.y = r() * Math.PI;
+  }
+  piece(g, new THREE.PlaneGeometry(0.4, 0.08), new THREE.MeshBasicMaterial({ map: plaqueTexture('DONATIONS') }), 0, 0.82, 0.212);
+  return [0.5, 0.5];
+}
+
+// A line of brass posts joined by velvet ropes (a queue lane), with thin colliders along each rope.
+function buildStanchionLine(room, points) {
+  const h = 0.95;
+  const posts = points.map(([px, pz]) => new THREE.Vector3(room.x + px, h - 0.05, room.z + pz));
+  const baseGeo = new THREE.CylinderGeometry(0.15, 0.17, 0.035, 32);
+  const poleGeo = new THREE.CylinderGeometry(0.022, 0.026, h, 16);
+  const topGeo = new THREE.SphereGeometry(0.045, 20, 12);
+  for (const c of posts) {
+    const g = new THREE.Group();
+    g.position.set(c.x, 0, c.z);
+    piece(g, baseGeo, MAT.brass, 0, 0.018, 0);
+    piece(g, poleGeo, MAT.brass, 0, h / 2, 0);
+    piece(g, topGeo, MAT.brass, 0, h + 0.02, 0);
+    g.traverse((m) => m.isMesh && (m.castShadow = true));
+    parent.add(g);
+    room.footprints.push({ x: c.x, z: c.z, w: 0.34, d: 0.34, round: true });
+  }
+  for (let k = 0; k < posts.length - 1; k++) {
+    const a = posts[k];
+    const b = posts[k + 1];
+    const mid = a.clone().lerp(b, 0.5);
+    mid.y -= 0.22;
+    const curve = new THREE.CatmullRomCurve3([a, a.clone().lerp(mid, 0.5).setY(a.y - 0.15), mid, b.clone().lerp(mid, 0.5).setY(b.y - 0.15), b]);
+    const rope = new THREE.Mesh(new THREE.TubeGeometry(curve, 32, 0.022, 10), MAT.rope);
+    rope.castShadow = true;
+    parent.add(rope);
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    addCollider((a.x + b.x) / 2, (a.z + b.z) / 2, Math.hypot(dx, dz), 0.2, Math.atan2(-dz, dx));
+  }
+}
+
+// Display case: a mahogany cabinet with a glass vitrine on top. An exhibit slot like a plinth.
+function buildCase(room, ex) {
+  const g = new THREE.Group();
+  const x = room.x + (ex.x ?? 0);
+  const z = room.z + (ex.z ?? 0);
+  const rot = THREE.MathUtils.degToRad(ex.rotation ?? 0);
+  g.position.set(x, 0, z);
+  g.rotation.y = rot;
+  const cabinetMat = new THREE.MeshStandardMaterial({ ...surfaceMaps('wainscot', '#5a2a1a', 1.5, 0.85 / 1.1), roughness: 1 });
+  const cabinet = piece(g, new THREE.BoxGeometry(1.5, 0.85, 0.75), cabinetMat, 0, 0.425, 0);
+  piece(g, new THREE.BoxGeometry(1.58, 0.05, 0.83), MAT.mahogany, 0, 0.875, 0);
+  piece(g, new THREE.BoxGeometry(1.4, 0.02, 0.66), MAT.felt, 0, 0.91, 0);
+  const glass = piece(g, new THREE.BoxGeometry(1.46, 0.56, 0.72), MAT.caseGlass, 0, 1.18, 0);
+  glass.renderOrder = 1;
+  for (const [cx, cz] of [[-0.73, -0.36], [0.73, -0.36], [-0.73, 0.36], [0.73, 0.36]]) piece(g, new THREE.BoxGeometry(0.03, 0.56, 0.03), MAT.gilt, cx, 1.18, cz);
+  piece(g, new THREE.BoxGeometry(1.5, 0.04, 0.76), MAT.mahogany, 0, 1.48, 0);
+  if (ex.title) {
+    // a placeholder object until an image or model is chosen
+    piece(g, new THREE.BoxGeometry(0.5, 0.04, 0.36), MAT.bookCover, 0, 0.94, 0).rotation.y = 0.3;
+  }
+  g.traverse((m) => {
+    if (m.isMesh && m.material !== MAT.caseGlass) m.castShadow = m.receiveShadow = true;
+  });
+  parent.add(g);
+  makeInteractive([cabinet, glass], ex, room);
+  addCollider(x, z, 1.58, 0.83, rot);
+  room.footprints.push({ x, z, w: 1.58, d: 0.83, rot });
+}
+
+const FURNITURE = {
+  admissions: buildAdmissionsDesk,
+  clock: buildClock,
+  palm: (g, room, item) => buildPalm(g, `palm${item.x},${item.z}`),
+  coatstand: buildCoatStand,
+  guide: buildGuideEasel,
+  donations: buildDonationBox,
+};
+
 function buildDecor(room, item) {
+  if (item.type === 'stanchions') return buildStanchionLine(room, item.points);
   const x = room.x + (item.x ?? 0);
   const z = room.z + (item.z ?? 0);
   const rot = THREE.MathUtils.degToRad(item.rotation ?? 0);
@@ -1298,6 +1611,9 @@ function buildDecor(room, item) {
       leg.position.set(lx, 0.12, lz);
       group.add(leg);
     }
+  } else if (FURNITURE[item.type]) {
+    size = FURNITURE[item.type](group, room, item);
+    round = item.type === 'palm';
   } else if (item.type === 'desk') {
     size = [3.2, 1];
     const desk = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.05, 1), room.victorian ? MAT.mahogany : MAT.oak);
@@ -1635,6 +1951,7 @@ function buildRotunda(room, group) {
   for (const ex of room.exhibits ?? []) {
     if (ex.face !== undefined) continue;
     if (ex.type === 'pedestal') buildPedestal(room, ex);
+    else if (ex.type === 'case') buildCase(room, ex);
   }
   for (const item of room.decor ?? []) buildDecor(room, item);
 
@@ -2124,6 +2441,7 @@ renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.05);
   updateMovement(dt);
   for (const s of spinners) s.rotation.y += dt * 0.5;
+  for (const animate of animators) animate(clock.elapsedTime);
   updateFocus();
   updateRoomLabel();
   drawMinimap();
