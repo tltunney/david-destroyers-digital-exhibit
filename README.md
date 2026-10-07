@@ -51,7 +51,10 @@ Three.js is included in `lib/three/`, so the museum works with no internet conne
   Free models are available on [Sketchfab](https://sketchfab.com) (check the license) or you can export them from Blender.
 - **New rooms**: copy a room block and give it new `x`, `z` values so it sits next to an existing room.
   Add a door on the shared wall, and the room on the other side gets the matching opening automatically.
-- **Colors and floors**: `wallColor`, `floorColor`, `accent`, and `floor` (`wood`, `marble`, `tile`, `carpet`).
+- **Colors and floors**: `wallColor`, `floorColor`, `accent`, and `floor` (`concrete`, `wood`, `marble`, `tile`, `carpet`).
+  `featureWall: 'north'` paints one wall in the room's accent color, and `skylight: true` adds a glowing ceiling skylight.
+- **The bust**: the Main Hall centerpiece uses `shape: 'bust'`, a marble bust built from simple shapes.
+  Pedestals also take `spin`, `facing`, and `spotlight`.
 
 Remember to cite your image sources in each exhibit's description.
 

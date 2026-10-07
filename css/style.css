@@ -3,7 +3,7 @@
   --card: rgba(20, 20, 26, 0.94);
   --text: #f2ede4;
   --muted: #b3ab9d;
-  --accent: #d9a441;
+  --accent: #f5f5f5;
 }
 
 * { box-sizing: border-box; }
@@ -14,7 +14,7 @@ html, body {
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 
 #app canvas { display: block; }
@@ -114,6 +114,7 @@ kbd {
 
 #overlay h1 {
   margin: 0 0 8px;
+  font-weight: 300;
   font-size: clamp(1.6rem, 4vw, 2.4rem);
   letter-spacing: 0.03em;
 }
@@ -125,7 +126,7 @@ kbd {
   border: none;
   border-radius: 999px;
   background: var(--accent);
-  color: #1a1408;
+  color: #111;
   font: inherit;
   font-size: 1.05rem;
   font-weight: bold;
@@ -163,7 +164,7 @@ kbd {
 
 #info-room {
   margin: 0;
-  color: var(--accent);
+  color: #c9a24a;
   font-size: 0.8rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -173,6 +174,6 @@ kbd {
 #info-image { display: block; max-width: 100%; max-height: 45vh; margin: 0 auto 16px; border-radius: 6px; }
 #info-image:not([src]), #info-image[src=""] { display: none; }
 #info-body p { line-height: 1.6; }
-#info-link { display: inline-block; margin-top: 8px; color: var(--accent); }
+#info-link { display: inline-block; margin-top: 8px; color: #c9a24a; }
 #info-link:empty { display: none; }
 .hint { margin: 20px 0 0; font-size: 0.8rem; color: var(--muted); }

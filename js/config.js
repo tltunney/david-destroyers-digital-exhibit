@@ -13,8 +13,10 @@
 //    x, z      center of the room
 //    w, d      width (x direction) and depth (z direction)
 //    height    ceiling height (default 5)
-//    floor     'wood' | 'marble' | 'tile' | 'carpet'
+//    floor     'concrete' | 'wood' | 'marble' | 'tile' | 'carpet'
 //    floorColor, wallColor, accent   any CSS color
+//    featureWall  one wall painted in the accent color: 'north' | 'south' | 'east' | 'west'
+//    skylight  true to add a glowing skylight in the ceiling
 //    doors     { north|south|east|west: [{ at, width }] }
 //              `at` = how far the door is from the middle of that wall.
 //              You only need to put a door on ONE side; the room on the
@@ -31,8 +33,8 @@
 //    panel     wall-mounted text sign (good for room intros)
 //              { type:'panel', wall:'east', at:-5, title, text, width, height }
 //    pedestal  3D object on a stand
-//              { type:'pedestal', x, z, shape:'torusKnot'|'icosahedron'|'sphere'|'box'|'cone'|'torus',
-//                color, model:'assets/models/thing.glb', scale, title, description }
+//              { type:'pedestal', x, z, shape:'bust'|'torusKnot'|'icosahedron'|'sphere'|'box'|'cone'|'torus',
+//                color, model:'assets/models/thing.glb', scale, spin, facing, spotlight, title, description }
 //
 //  `description` can be one string or an array of paragraphs.
 //  Every painting, panel, and pedestal can be clicked (or press E) for details.
@@ -54,7 +56,7 @@ export const ROOMS = [
     id: 'lobby',
     name: 'Lobby',
     x: 0, z: 0, w: 16, d: 14,
-    floor: 'marble', floorColor: '#d8d2c6', wallColor: '#e9e2d4', accent: '#b8862b',
+    floor: 'concrete', floorColor: '#cfcfcb', wallColor: '#f6f6f3', accent: '#1d1d1f',
     doors: { north: [{ at: 0, width: 5 }] },
     exhibits: [
       {
@@ -89,8 +91,8 @@ export const ROOMS = [
   {
     id: 'hall',
     name: 'Main Hall',
-    x: 0, z: -19, w: 28, d: 24, height: 7,
-    floor: 'tile', floorColor: '#bfb6a6', wallColor: '#d9cfbd', accent: '#8a5a2b',
+    x: 0, z: -19, w: 28, d: 24, height: 7, skylight: true,
+    floor: 'concrete', floorColor: '#dcdcd8', wallColor: '#f7f7f4', accent: '#c9a24a',
     doors: {
       west:  [{ at: 0, width: 4 }],
       east:  [{ at: 0, width: 4 }],
@@ -98,11 +100,12 @@ export const ROOMS = [
     },
     exhibits: [
       {
-        type: 'pedestal', x: 0, z: 0, shape: 'torusKnot', color: '#c9a227', scale: 1.8,
-        title: 'Centerpiece', subtitle: 'The heart of the collection',
+        type: 'pedestal', x: 0, z: 0, shape: 'bust', color: '#f1eee8', scale: 1.5,
+        spin: false, facing: 'south', spotlight: true,
+        title: 'David Copperfield', subtitle: 'Marble bust, Main Hall centerpiece',
         description: [
-          'The centerpiece is the first thing visitors see. Use it for the single most important object or idea in your exhibit.',
-          'Tip: you can replace this shape with a real 3D model (.glb file) by setting `model` in config.js.',
+          'Replace this with your introduction to David Copperfield: who he is, and why he is at the center of this exhibit.',
+          'Tip: for a more realistic likeness, you can swap this bust for a 3D model (.glb file) by setting `model` in config.js.',
         ],
       },
       {
@@ -141,7 +144,7 @@ export const ROOMS = [
     id: 'origins',
     name: 'Gallery 1: Origins',
     x: -24, z: -19, w: 20, d: 16,
-    floor: 'wood', floorColor: '#8b5e3c', wallColor: '#3f5a73', accent: '#e0b64f',
+    floor: 'wood', floorColor: '#c9a882', wallColor: '#f6f6f3', accent: '#2f6fde', featureWall: 'west',
     exhibits: [
       { type: 'panel', wall: 'east', at: -5, width: 2.4, height: 1.8, title: 'Origins', text: 'Introduce this gallery: where does the story begin?' },
       { type: 'painting', wall: 'north', at: -5, title: 'Origins I', description: PLACEHOLDER },
@@ -160,7 +163,7 @@ export const ROOMS = [
     id: 'turning-points',
     name: 'Gallery 2: Turning Points',
     x: 24, z: -19, w: 20, d: 16,
-    floor: 'wood', floorColor: '#6e4a2f', wallColor: '#6b2f2f', accent: '#f0c674',
+    floor: 'wood', floorColor: '#c9a882', wallColor: '#f6f6f3', accent: '#e4572e', featureWall: 'east',
     exhibits: [
       { type: 'panel', wall: 'west', at: -5, width: 2.4, height: 1.8, title: 'Turning Points', text: 'Introduce this gallery: which moments changed everything?' },
       { type: 'painting', wall: 'north', at: -4, title: 'Turning Point I', description: PLACEHOLDER },
@@ -179,7 +182,7 @@ export const ROOMS = [
     id: 'people',
     name: 'Gallery 3: People & Voices',
     x: -7, z: -41, w: 14, d: 20,
-    floor: 'carpet', floorColor: '#4a3b5c', wallColor: '#2f4f45', accent: '#e8d5a3',
+    floor: 'concrete', floorColor: '#d6d6d2', wallColor: '#f6f6f3', accent: '#1f9d6b', featureWall: 'north',
     exhibits: [
       { type: 'panel', wall: 'south', at: -4.5, width: 2.2, height: 1.6, title: 'People & Voices', text: 'Introduce the people at the center of your story.' },
       { type: 'painting', wall: 'west', at: -5, width: 1.6, height: 2.2, title: 'Portrait I', description: PLACEHOLDER },
@@ -197,7 +200,7 @@ export const ROOMS = [
     id: 'legacy',
     name: 'Gallery 4: Legacy',
     x: 7, z: -41, w: 14, d: 20,
-    floor: 'marble', floorColor: '#e7e3dc', wallColor: '#1f2a3a', accent: '#9ad1d4',
+    floor: 'concrete', floorColor: '#d6d6d2', wallColor: '#f6f6f3', accent: '#7b5cf0', featureWall: 'north',
     exhibits: [
       { type: 'panel', wall: 'south', at: 4.5, width: 2.2, height: 1.6, title: 'Legacy', text: 'Wrap up your story: what is the lasting impact today?' },
       { type: 'painting', wall: 'west', at: -5, title: 'Legacy I', description: PLACEHOLDER },

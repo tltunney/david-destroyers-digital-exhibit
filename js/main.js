@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { MUSEUM, ROOMS } from './config.js';
 
 // ---------------------------------------------------------------- constants
@@ -13,7 +14,8 @@ const PLAYER_RADIUS = 0.35;
 const WALK_SPEED = 4;
 const RUN_SPEED = 7.5;
 const INTERACT_DISTANCE = 6;
-const ROOM_LIGHT = 12;
+const ROOM_LIGHT = 10;
+const FONT = '"Helvetica Neue", Helvetica, Arial, sans-serif';
 
 const SIDES = {
   north: { horizontal: true,  sign: -1, opposite: 'south', rotY: 0 },
@@ -28,12 +30,15 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.1;
+renderer.toneMapping = THREE.AgXToneMapping;
+renderer.toneMappingExposure = 1.25;
 document.getElementById('app').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0e0e12);
+// soft "photo studio" light that bounces off everything, plus gentle reflections
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.55;
 
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 200);
 camera.rotation.order = 'YXZ';
@@ -183,6 +188,17 @@ function floorTexture(style, color) {
         ctx.beginPath(); ctx.moveTo(i * s, 0); ctx.lineTo(i * s, h); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(0, i * s); ctx.lineTo(w, i * s); ctx.stroke();
       }
+    } else if (style === 'concrete') {
+      // polished concrete: soft blotches + faint large slab seams
+      for (let i = 0; i < 260; i++) {
+        ctx.fillStyle = `rgba(${rand() > 0.5 ? '255,255,255' : '0,0,0'},${rand() * 0.035})`;
+        ctx.beginPath();
+        ctx.arc(rand() * w, rand() * h, 10 + rand() * 70, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(0, 0, w, h);
     } else if (style === 'marble') {
       ctx.lineWidth = 1.5;
       for (let v = 0; v < 14; v++) {
@@ -245,9 +261,9 @@ function textPanelTexture(title, text, aspect, accent) {
     ctx.fillStyle = accent;
     ctx.fillRect(48, 48, 10, H - 96);
     ctx.fillStyle = '#f4efe6';
-    ctx.font = 'bold 72px Georgia, serif';
+    ctx.font = 'bold 72px ' + FONT;
     ctx.fillText(title, 90, 120);
-    ctx.font = '40px Georgia, serif';
+    ctx.font = '40px ' + FONT;
     ctx.fillStyle = '#d6cfc2';
     wrapText(ctx, text ?? '', W - 160).forEach((line, i) => ctx.fillText(line, 90, 200 + i * 56));
   });
@@ -258,9 +274,9 @@ function labelTexture(title, subtitle) {
     ctx.fillStyle = '#f3efe7';
     ctx.fillRect(0, 0, w, h);
     ctx.fillStyle = '#1b1b1b';
-    ctx.font = 'bold 44px Georgia, serif';
+    ctx.font = 'bold 44px ' + FONT;
     ctx.fillText(title, 24, 64, w - 48);
-    ctx.font = 'italic 30px Georgia, serif';
+    ctx.font = 'italic 30px ' + FONT;
     ctx.fillStyle = '#555';
     ctx.fillText(subtitle ?? 'Click to learn more', 24, 116, w - 48);
   });
@@ -273,7 +289,7 @@ function signTexture(text, accent) {
     ctx.fillStyle = accent;
     ctx.fillRect(0, h - 10, w, 10);
     ctx.fillStyle = '#f4efe6';
-    ctx.font = 'bold 64px Georgia, serif';
+    ctx.font = 'bold 64px ' + FONT;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(text, w / 2, h / 2 - 4, w - 40);
@@ -301,28 +317,32 @@ function loadImage(url, material) {
 
 // ---------------------------------------------------------------- shared materials
 const MAT = {
-  frame: new THREE.MeshStandardMaterial({ color: 0x6b4a1f, roughness: 0.4, metalness: 0.5 }),
-  trim: new THREE.MeshStandardMaterial({ color: 0x2a2420, roughness: 0.7 }),
-  pedestal: new THREE.MeshStandardMaterial({ color: 0xf2efe8, roughness: 0.5 }),
-  bench: new THREE.MeshStandardMaterial({ color: 0x5a3b22, roughness: 0.6 }),
-  metal: new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.3, metalness: 0.8 }),
-  pot: new THREE.MeshStandardMaterial({ color: 0xb5651d, roughness: 0.8 }),
-  leaf: new THREE.MeshStandardMaterial({ color: 0x2e7d32, roughness: 0.9 }),
-  light: new THREE.MeshBasicMaterial({ color: 0xfff6e0 }),
-  ceiling: new THREE.MeshStandardMaterial({ color: 0xf4f1ea, emissive: 0x3a3732, roughness: 1 }),
+  frame: new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.5 }),
+  passepartout: new THREE.MeshStandardMaterial({ color: 0xfafafa, roughness: 0.9 }),
+  trim: new THREE.MeshStandardMaterial({ color: 0x2b2b2b, roughness: 0.6 }),
+  pedestal: new THREE.MeshStandardMaterial({ color: 0xfbfbfb, roughness: 0.35 }),
+  bench: new THREE.MeshStandardMaterial({ color: 0xc9a77c, roughness: 0.55 }),
+  metal: new THREE.MeshStandardMaterial({ color: 0x1c1c1c, roughness: 0.25, metalness: 0.9 }),
+  pot: new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.4 }),
+  leaf: new THREE.MeshStandardMaterial({ color: 0x3f8f4a, roughness: 0.8 }),
+  marble: new THREE.MeshStandardMaterial({ color: 0xf1eee8, roughness: 0.3 }),
+  light: new THREE.MeshBasicMaterial({ color: 0xffffff }),
+  sky: new THREE.MeshBasicMaterial({ color: 0xdff0ff }),
+  ceiling: new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x6a6a6a, roughness: 1 }),
 };
 
 // ---------------------------------------------------------------- room builders
 function buildRoom(room) {
   const { x, z, w, d, height } = room;
-  const wallMat = new THREE.MeshStandardMaterial({ color: room.wallColor ?? '#ddd', roughness: 0.9 });
+  const wallMat = new THREE.MeshStandardMaterial({ color: room.wallColor ?? '#f4f4f1', roughness: 0.92 });
+  const featureMat = new THREE.MeshStandardMaterial({ color: room.accent ?? '#888', roughness: 0.92 });
 
   // floor
   const tex = floorTexture(room.floor ?? 'wood', room.floorColor ?? '#888');
-  tex.repeat.set(w / 4, d / 4);
+  tex.repeat.set(w / 6, d / 6);
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(w, d),
-    new THREE.MeshStandardMaterial({ map: tex, roughness: room.floor === 'marble' ? 0.25 : 0.75 }),
+    new THREE.MeshStandardMaterial({ map: tex, roughness: { marble: 0.2, concrete: 0.3, tile: 0.35 }[room.floor] ?? 0.6 }),
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(x, 0, z);
@@ -335,21 +355,8 @@ function buildRoom(room) {
   scene.add(ceiling);
 
   // walls (with door openings), baseboards, door trim and signs
-  for (const side of Object.keys(SIDES)) buildWall(room, side, wallMat);
-
-  // ceiling: a grid of glowing panels, but only one real light per room (lights are expensive)
-  const cols = Math.max(1, Math.round(w / 9));
-  const rows = Math.max(1, Math.round(d / 9));
-  for (let i = 0; i < cols; i++) {
-    for (let j = 0; j < rows; j++) {
-      const lx = x - w / 2 + (w / cols) * (i + 0.5);
-      const lz = z - d / 2 + (d / rows) * (j + 0.5);
-      addBox(1.6, 0.06, 1.6, MAT.light, lx, height - 0.04, lz);
-    }
-  }
-  const light = new THREE.PointLight(0xfff1d6, ROOM_LIGHT, Math.max(w, d) * 0.9, 1);
-  light.position.set(x, height - 0.6, z);
-  scene.add(light);
+  for (const side of Object.keys(SIDES)) buildWall(room, side, side === room.featureWall ? featureMat : wallMat);
+  buildCeilingLights(room);
 
   for (const ex of room.exhibits ?? []) {
     if (ex.type === 'painting') buildPainting(room, ex);
@@ -358,6 +365,48 @@ function buildRoom(room) {
     else console.warn(`Unknown exhibit type "${ex.type}" in room "${room.id}"`);
   }
   for (const item of room.decor ?? []) buildDecor(room, item);
+}
+
+// Linear LED strips, a glowing cove around the edge, an optional skylight,
+// and a couple of real lights (real lights are expensive, so we keep them few).
+function buildCeilingLights(room) {
+  const { x, z, w, d, height } = room;
+  const y = height - 0.03;
+  const longAlongX = w >= d;
+  const span = (longAlongX ? w : d) - 3;
+  const across = longAlongX ? d : w;
+  const strips = Math.max(2, Math.round(across / 3.5));
+  for (let i = 0; i < strips; i++) {
+    const off = -across / 2 + (across / strips) * (i + 0.5);
+    if (room.skylight && Math.abs(off) < across * 0.3) continue;
+    if (longAlongX) addBox(span, 0.04, 0.12, MAT.light, x, y, z + off);
+    else addBox(0.12, 0.04, span, MAT.light, x + off, y, z);
+  }
+  // perimeter cove glow
+  const inset = HALF_WALL + 0.25;
+  addBox(w - inset * 2, 0.05, 0.08, MAT.light, x, y, z - d / 2 + inset);
+  addBox(w - inset * 2, 0.05, 0.08, MAT.light, x, y, z + d / 2 - inset);
+  addBox(0.08, 0.05, d - inset * 2, MAT.light, x - w / 2 + inset, y, z);
+  addBox(0.08, 0.05, d - inset * 2, MAT.light, x + w / 2 - inset, y, z);
+
+  if (room.skylight) {
+    const sw = w * 0.45;
+    const sd = d * 0.5;
+    addBox(sw, 0.02, sd, MAT.sky, x, height - 0.01, z);
+    const n = 4;
+    for (let i = 1; i < n; i++) {
+      addBox(0.08, 0.06, sd, MAT.metal, x - sw / 2 + (sw / n) * i, height - 0.03, z);
+      addBox(sw, 0.06, 0.08, MAT.metal, x, height - 0.03, z - sd / 2 + (sd / n) * i);
+    }
+  }
+
+  const count = Math.max(w, d) > 18 ? 2 : 1;
+  for (let i = 0; i < count; i++) {
+    const t = count === 1 ? 0 : (i === 0 ? -0.25 : 0.25);
+    const light = new THREE.PointLight(0xfff6ea, ROOM_LIGHT * (height / DEFAULT_HEIGHT), Math.max(w, d), 1);
+    light.position.set(x + (longAlongX ? w * t : 0), height - 0.8, z + (longAlongX ? 0 : d * t));
+    scene.add(light);
+  }
 }
 
 function buildWall(room, side, wallMat) {
@@ -395,17 +444,6 @@ function buildWall(room, side, wallMat) {
   }
 
   for (const door of room.doors[side]) {
-    // dark frame around the opening
-    const along = (off) => wallPoint(room, side, door.at + off, HALF_WALL + 0.03);
-    const post = s.horizontal ? [0.14, DOOR_HEIGHT, 0.06] : [0.06, DOOR_HEIGHT, 0.14];
-    for (const off of [-door.width / 2, door.width / 2]) {
-      const p = along(off);
-      addBox(...post, MAT.trim, p.x, DOOR_HEIGHT / 2, p.z);
-    }
-    const tp = along(0);
-    const top = s.horizontal ? [door.width + 0.14, 0.14, 0.06] : [0.06, 0.14, door.width + 0.14];
-    addBox(...top, MAT.trim, tp.x, DOOR_HEIGHT, tp.z);
-
     // sign above the door naming the room it leads to
     if (door.to) {
       const sp = wallPoint(room, side, door.at, HALF_WALL + 0.02);
@@ -442,25 +480,23 @@ function buildPainting(room, ex) {
   const y = ex.y ?? 2.2;
   const group = new THREE.Group();
 
-  const frame = new THREE.Mesh(new THREE.BoxGeometry(w + 0.24, h + 0.24, 0.08), MAT.frame);
-  frame.position.z = 0.04;
+  // thin black frame with a white mat, gallery style
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(w + 0.42, h + 0.42, 0.05), MAT.frame);
+  frame.position.z = 0.025;
+  const mat = new THREE.Mesh(new THREE.PlaneGeometry(w + 0.34, h + 0.34), MAT.passepartout);
+  mat.position.z = 0.052;
   const artMat = displayMaterial(artTexture(ex.title ?? 'untitled', room.accent ?? '#888'));
   if (ex.image) loadImage(ex.image, artMat);
   const art = new THREE.Mesh(new THREE.PlaneGeometry(w, h), artMat);
-  art.position.z = 0.085;
+  art.position.z = 0.055;
 
   const label = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.28), displayMaterial(labelTexture(ex.title ?? '', ex.subtitle)));
-  label.position.set(w / 2 + 0.6, -h / 2 + 0.14, 0.02);
+  label.position.set(w / 2 + 0.75, -h / 2 + 0.14, 0.02);
   if (w / 2 + 1.1 > 3) label.position.set(0, -h / 2 - 0.35, 0.02); // big paintings: label underneath
 
-  // small picture light above the frame
-  const lamp = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, Math.min(w, 1.2), 12), MAT.metal);
-  lamp.rotation.z = Math.PI / 2;
-  lamp.position.set(0, h / 2 + 0.25, 0.25);
-
-  group.add(frame, art, label, lamp);
+  group.add(frame, mat, art, label);
   mountOnWall(room, ex, group, y);
-  makeInteractive([frame, art, label], ex, room);
+  makeInteractive([frame, mat, art, label], ex, room);
 }
 
 function buildPanel(room, ex) {
@@ -475,7 +511,58 @@ function buildPanel(room, ex) {
   makeInteractive([panel], { ...ex, description: ex.description ?? ex.text }, room);
 }
 
+// A marble portrait bust built from simple shapes, about 1 unit tall, centered on y = 0.
+// For a real likeness, export a scanned/sculpted .glb and use `model` instead.
+function makeBust(color) {
+  const marble = new THREE.MeshStandardMaterial({ color: color ?? '#f1eee8', roughness: 0.32 });
+  const hairMat = marble.clone();
+  hairMat.side = THREE.DoubleSide;
+  const bust = new THREE.Group();
+  const part = (geometry, [x, y, z], [sx, sy, sz] = [1, 1, 1], rotX = 0, material = marble) => {
+    const m = new THREE.Mesh(geometry, material);
+    m.position.set(x, y, z);
+    m.scale.set(sx, sy, sz);
+    m.rotation.x = rotX;
+    bust.add(m);
+    return m;
+  };
+  const ball = new THREE.SphereGeometry(1, 48, 32);
+
+  // round socle the bust stands on
+  part(new THREE.CylinderGeometry(0.15, 0.2, 0.12, 48), [0, -0.44, 0]);
+  // chest and shoulders: a lathe dome squashed front-to-back
+  const profile = [[0, 0], [0.92, 0], [1, 0.1], [0.98, 0.38], [0.86, 0.66], [0.55, 0.9], [0.25, 0.99], [0, 1]].map(([r, y]) => new THREE.Vector2(r, y));
+  part(new THREE.LatheGeometry(profile, 64), [0, -0.38, 0], [0.36, 0.44, 0.2]);
+  // jacket lapels + shirt collar
+  for (const side of [-1, 1]) {
+    const lapel = part(new THREE.BoxGeometry(0.05, 0.2, 0.015), [side * 0.055, -0.1, 0.165]);
+    lapel.rotation.set(-0.45, 0, side * 0.4);
+    const collar = part(new THREE.BoxGeometry(0.06, 0.05, 0.012), [side * 0.04, 0.045, 0.085]);
+    collar.rotation.set(-0.35, 0, side * 0.55);
+  }
+  // neck
+  part(new THREE.CylinderGeometry(0.075, 0.085, 0.16, 32), [0, 0.09, 0]);
+  // head and jaw
+  part(ball, [0, 0.27, 0.005], [0.128, 0.165, 0.15]);
+  part(ball, [0, 0.2, 0.02], [0.1, 0.075, 0.095]);
+  part(ball, [0, 0.13, 0.085], [0.038, 0.03, 0.035]);
+  // brow, eyes, nose, ears
+  part(ball, [0, 0.305, 0.118], [0.095, 0.018, 0.035]);
+  for (const side of [-1, 1]) {
+    part(ball, [side * 0.048, 0.285, 0.128], [0.02, 0.014, 0.016]);
+    part(ball, [side * 0.128, 0.26, -0.005], [0.018, 0.045, 0.03]);
+  }
+  part(ball, [0, 0.245, 0.145], [0.02, 0.045, 0.03], -0.25);
+  // hair: a cap that hugs the skull, tipped back so the hairline sits high at the front,
+  // with extra volume swept up and back on top
+  part(new THREE.SphereGeometry(1, 48, 32, 0, Math.PI * 2, 0, Math.PI * 0.55), [0, 0.29, -0.01], [0.136, 0.17, 0.158], -0.45, hairMat);
+  part(ball, [0, 0.4, 0.02], [0.11, 0.05, 0.11], -0.3);
+  part(ball, [0, 0.385, -0.06], [0.125, 0.06, 0.11], 0.15);
+  return bust;
+}
+
 function makeShape(shape, color) {
+  if (shape === 'bust') return makeBust(color);
   const geometries = {
     torusKnot: () => new THREE.TorusKnotGeometry(0.28, 0.09, 128, 16),
     icosahedron: () => new THREE.IcosahedronGeometry(0.4, 0),
@@ -533,6 +620,15 @@ function buildPedestal(room, ex) {
     holder.add(shape);
   }
   if (ex.spin !== false) spinners.push(holder);
+  // objects are modeled facing south (+z); FACING is for the camera, which starts out facing north
+  holder.rotation.y = (FACING[ex.facing ?? 'south'] ?? 0) + Math.PI;
+
+  if (ex.spotlight) {
+    const spot = new THREE.SpotLight(0xffffff, 45, 14, 0.35, 0.6, 1);
+    spot.position.set(px, room.height - 0.3, pz + 3);
+    spot.target = holder;
+    scene.add(spot);
+  }
 }
 
 function buildDecor(room, item) {
