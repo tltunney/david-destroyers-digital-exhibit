@@ -12,7 +12,8 @@
   </script>
 </head>
 <body>
-  <!-- Preview of assets/models/copperfield.glb. Add #angle=0.6&zoom=1 to the URL to turn the view. -->
+  <!-- Preview of assets/models/copperfield.glb. Add #angle=0.6&zoom=1&y=0.95 to the URL to turn the view,
+       &cy=0.6 to set the camera height, and &model=path/to/other.glb to look at a different file. -->
   <script type="module">
     import * as THREE from 'three';
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -22,6 +23,7 @@
     const angle = Number(params.get('angle') ?? 0.35);
     const zoom = Number(params.get('zoom') ?? 1);
     const focusY = Number(params.get('y') ?? 0.95);
+    const eyeY = Number(params.get('cy') ?? focusY + 0.15); // camera height
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(innerWidth, innerHeight);
@@ -43,10 +45,10 @@
 
     const camera = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.05, 50);
     const dist = 4.2 / zoom;
-    camera.position.set(Math.sin(angle) * dist, focusY + 0.15, Math.cos(angle) * dist);
+    camera.position.set(Math.sin(angle) * dist, eyeY, Math.cos(angle) * dist);
     camera.lookAt(0, focusY, 0);
 
-    new GLTFLoader().load('../../assets/models/copperfield.glb', (gltf) => {
+    new GLTFLoader().load(params.get('model') ?? '../../assets/models/copperfield.glb', (gltf) => {
       gltf.scene.traverse((m) => {
         if (m.isMesh) {
           m.castShadow = m.receiveShadow = true;
