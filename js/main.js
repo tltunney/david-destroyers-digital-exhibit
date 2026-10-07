@@ -252,20 +252,47 @@ function artTexture(title, accent) {
   });
 }
 
-function textPanelTexture(title, text, aspect, accent) {
-  const W = 1024;
+// Wall text. Wider panels get a sharper canvas, and the body font shrinks until the text fits.
+function textPanelTexture(title, text, widthMeters, aspect, accent) {
+  const W = Math.round(THREE.MathUtils.clamp((1024 * widthMeters) / 3, 1024, 2048));
   const H = Math.round(W / aspect);
+  const k = W / 1024;
   return canvasTexture(W, H, (ctx) => {
     ctx.fillStyle = '#16161b';
     ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = accent;
-    ctx.fillRect(48, 48, 10, H - 96);
+    ctx.fillRect(48 * k, 48 * k, 10 * k, H - 96 * k);
     ctx.fillStyle = '#f4efe6';
-    ctx.font = 'bold 72px ' + FONT;
-    ctx.fillText(title, 90, 120);
-    ctx.font = '40px ' + FONT;
+    ctx.font = `bold ${64 * k}px ${FONT}`;
+    ctx.fillText(title, 90 * k, 116 * k, W - 140 * k);
+
+    const top = 186 * k;
+    const bottom = H - 56 * k;
+    let size = 40 * k;
+    let lines;
+    for (; size > 14 * k; size -= 2 * k) {
+      ctx.font = `${size}px ${FONT}`;
+      lines = wrapText(ctx, text ?? '', W - 160 * k);
+      if (lines.length * size * 1.4 <= bottom - top + size) break;
+    }
     ctx.fillStyle = '#d6cfc2';
-    wrapText(ctx, text ?? '', W - 160).forEach((line, i) => ctx.fillText(line, 90, 200 + i * 56));
+    lines.forEach((line, i) => ctx.fillText(line, 90 * k, top + i * size * 1.4));
+  });
+}
+
+// An empty frame waiting for its exhibit.
+function emptySlotTexture() {
+  return canvasTexture(512, 512, (ctx, w, h) => {
+    ctx.fillStyle = '#ecebe7';
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = '#b9b7b0';
+    ctx.lineWidth = 4;
+    ctx.setLineDash([18, 14]);
+    ctx.strokeRect(28, 28, w - 56, h - 56);
+    ctx.fillStyle = '#9a978f';
+    ctx.font = `28px ${FONT}`;
+    ctx.textAlign = 'center';
+    ctx.fillText('Exhibit coming soon', w / 2, h / 2 + 10);
   });
 }
 
@@ -485,7 +512,7 @@ function buildPainting(room, ex) {
   frame.position.z = 0.025;
   const mat = new THREE.Mesh(new THREE.PlaneGeometry(w + 0.34, h + 0.34), MAT.passepartout);
   mat.position.z = 0.052;
-  const artMat = displayMaterial(artTexture(ex.title ?? 'untitled', room.accent ?? '#888'));
+  const artMat = displayMaterial(ex.title || ex.image ? artTexture(ex.title || 'untitled', room.accent ?? '#888') : emptySlotTexture());
   if (ex.image) loadImage(ex.image, artMat);
   const art = new THREE.Mesh(new THREE.PlaneGeometry(w, h), artMat);
   art.position.z = 0.055;
@@ -494,7 +521,8 @@ function buildPainting(room, ex) {
   label.position.set(w / 2 + 0.75, -h / 2 + 0.14, 0.02);
   if (w / 2 + 1.1 > 3) label.position.set(0, -h / 2 - 0.35, 0.02); // big paintings: label underneath
 
-  group.add(frame, mat, art, label);
+  group.add(frame, mat, art);
+  if (ex.title) group.add(label);
   mountOnWall(room, ex, group, y);
   makeInteractive([frame, mat, art, label], ex, room);
 }
@@ -504,7 +532,7 @@ function buildPanel(room, ex) {
   const h = ex.height ?? 1.6;
   const panel = new THREE.Mesh(
     new THREE.BoxGeometry(w, h, 0.06),
-    [MAT.trim, MAT.trim, MAT.trim, MAT.trim, displayMaterial(textPanelTexture(ex.title ?? '', ex.text, w / h, room.accent ?? '#d9a441')), MAT.trim],
+    [MAT.trim, MAT.trim, MAT.trim, MAT.trim, displayMaterial(textPanelTexture(ex.title ?? '', ex.text, w, w / h, room.accent ?? '#d9a441')), MAT.trim],
   );
   panel.geometry.translate(0, 0, 0.03);
   mountOnWall(room, ex, panel, ex.y ?? 1.9);
@@ -614,11 +642,11 @@ function buildPedestal(room, ex) {
         holder.add(shape);
       },
     );
-  } else {
+  } else if (ex.shape) {
     const shape = makeShape(ex.shape, ex.color);
     shape.scale.setScalar(scale);
     holder.add(shape);
-  }
+  } // no shape or model: an empty plinth waiting for its exhibit
   if (ex.spin !== false) spinners.push(holder);
   // objects are modeled facing south (+z); FACING is for the camera, which starts out facing north
   holder.rotation.y = (FACING[ex.facing ?? 'south'] ?? 0) + Math.PI;
@@ -772,7 +800,7 @@ document.addEventListener('pointerlockerror', () => {
 function openPanel(exhibit, room) {
   panelOpen = true;
   $('info-room').textContent = room.name;
-  $('info-title').textContent = exhibit.title ?? '';
+  $('info-title').textContent = exhibit.title || 'Exhibit coming soon';
   $('info-subtitle').textContent = exhibit.subtitle ?? '';
   const img = $('info-image');
   if (exhibit.image) img.src = exhibit.image;
@@ -780,7 +808,8 @@ function openPanel(exhibit, room) {
   img.alt = exhibit.title ?? '';
   const body = $('info-body');
   body.replaceChildren();
-  const paragraphs = Array.isArray(exhibit.description) ? exhibit.description : [exhibit.description ?? ''];
+  const description = exhibit.description || (exhibit.title ? '' : 'This space is saved for an upcoming exhibit.');
+  const paragraphs = Array.isArray(description) ? description : description.split('\n');
   for (const text of paragraphs) {
     const p = document.createElement('p');
     p.textContent = text;
@@ -835,7 +864,7 @@ function updateFocus() {
     ui.prompt.innerHTML = '';
     const kbd = document.createElement('kbd');
     kbd.textContent = 'E';
-    ui.prompt.append(kbd, ` View: ${focused.userData.exhibit.title ?? 'Exhibit'}`);
+    ui.prompt.append(kbd, ` View: ${focused.userData.exhibit.title || 'Exhibit coming soon'}`);
     ui.prompt.classList.remove('hidden');
   } else ui.prompt.classList.add('hidden');
 }

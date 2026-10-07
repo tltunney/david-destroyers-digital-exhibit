@@ -38,20 +38,38 @@
 //
 //  `description` can be one string or an array of paragraphs.
 //  Every painting, panel, and pedestal can be clicked (or press E) for details.
+//
+//  EMPTY SLOTS: a painting with no `image` and no `title` shows a blank
+//  "Exhibit coming soon" frame, and a pedestal with no `shape` or `model`
+//  is an empty plinth. Fill in the fields to add your exhibit.
 // =====================================================================
 
 export const MUSEUM = {
-  title: 'David Destroyers Digital Exhibit',
-  subtitle: 'An interactive walk-through museum',
-  credits: 'Created by the David Destroyers team',
+  title: 'What Trying Costs',
+  subtitle: 'Debt, cushion, and the price of a chance in Dickens\'s David Copperfield and today',
+  credits: 'A digital exhibit by the David Destroyers',
   spawn: { x: 0, z: 5, facing: 'north' },
 };
 
-const PLACEHOLDER =
-  'Replace this with your exhibit text: what this object is, where and when it is from, and why it matters to the story of the exhibit.';
+// Full thesis, shown in the Main Hall.
+const THESIS =
+  'In David Copperfield, debt works as an invisible filter that decides not who can succeed but what each attempt costs: ' +
+  'the price paid up front, the way a person has to pay it, and what happens if they fail. All three depend on cushion: ' +
+  'a patron, status, and socioeconomic position. The entry price is the same for everyone, but its weight is not. ' +
+  'Betsey pays David\'s premium, and her later ruin doesn\'t end his career. Heep, with no money or status, must pay in ' +
+  'other currencies, performed humility and eventually leverage over other people\'s debts and weaknesses, and no one ' +
+  'catches him when it fails. Micawber and Traddles pay by credit and co-signing and are punished severely. Today\'s ' +
+  'young people face the same three costs: a price to enter a profession, a limited set of ways to pay it, and a system ' +
+  'whose language is hard to read, which sorts them less by effort than by who can afford to be wrong.';
+
+const PITCH = 'Debt doesn\'t decide who succeeds. It decides what trying costs, how you have to pay, and what failing takes from you.';
+
+// An empty exhibit slot. Fill in image/title/description to add an exhibit.
+const empty = (wall, at, size = {}) => ({ type: 'painting', wall, at, ...size, image: '', title: '', subtitle: '', description: '' });
+const emptyPlinth = (x, z) => ({ type: 'pedestal', x, z, model: '', shape: '', title: '', description: '' });
 
 export const ROOMS = [
-  // ------------------------------------------------------------- LOBBY
+  // ------------------------------------------------------------- 1. LOBBY
   {
     id: 'lobby',
     name: 'Lobby',
@@ -59,24 +77,14 @@ export const ROOMS = [
     floor: 'concrete', floorColor: '#cfcfcb', wallColor: '#f6f6f3', accent: '#1d1d1f',
     doors: { north: [{ at: 0, width: 5 }] },
     exhibits: [
+      { type: 'panel', wall: 'west', at: 0, width: 3.4, height: 2.2, title: 'What Trying Costs', text: PITCH },
       {
-        type: 'panel', wall: 'west', at: 0, width: 3.2, height: 2.2,
-        title: 'Welcome',
-        text: 'Welcome to our digital exhibit. Walk through the Main Hall ahead to reach four galleries. Click on any artwork or sign to learn more.',
-      },
-      {
-        type: 'panel', wall: 'east', at: 0, width: 3.2, height: 2.2,
+        type: 'panel', wall: 'east', at: 0, width: 3.4, height: 2.2,
         title: 'About This Project',
-        text: 'Use this panel to introduce your class, your group members, and the big question your exhibit explores.',
+        text: 'Add your names, class, and date here.',
       },
-      {
-        type: 'painting', wall: 'south', at: -5, width: 2.2, height: 1.5,
-        title: 'Featured Image', subtitle: 'Lobby highlight', description: PLACEHOLDER,
-      },
-      {
-        type: 'painting', wall: 'south', at: 5, width: 2.2, height: 1.5,
-        title: 'Featured Image II', subtitle: 'Lobby highlight', description: PLACEHOLDER,
-      },
+      empty('south', -5, { width: 2.2, height: 1.5 }),
+      empty('south', 5, { width: 2.2, height: 1.5 }),
     ],
     decor: [
       { type: 'desk', x: -4, z: -3.5 },
@@ -87,7 +95,7 @@ export const ROOMS = [
     ],
   },
 
-  // --------------------------------------------------------- MAIN HALL
+  // --------------------------------------------------------- 2. MAIN HALL
   {
     id: 'hall',
     name: 'Main Hall',
@@ -102,30 +110,22 @@ export const ROOMS = [
       {
         type: 'pedestal', x: 0, z: 0, shape: 'bust', color: '#f1eee8', scale: 1.5,
         spin: false, facing: 'south', spotlight: true,
-        title: 'David Copperfield', subtitle: 'Marble bust, Main Hall centerpiece',
-        description: [
-          'Replace this with your introduction to David Copperfield: who he is, and why he is at the center of this exhibit.',
-          'Tip: for a more realistic likeness, you can swap this bust for a 3D model (.glb file) by setting `model` in config.js.',
-        ],
+        title: 'David Copperfield', subtitle: 'Narrator and hero of Charles Dickens\'s novel',
+        description: 'Add your introduction to David here.',
       },
+      { type: 'panel', wall: 'north', at: 0, width: 9, height: 4.4, y: 4, title: 'Thesis', text: THESIS },
       {
-        type: 'painting', wall: 'north', at: 0, width: 4.5, height: 3, y: 3,
-        title: 'The Big Picture', subtitle: 'Overview', description: PLACEHOLDER,
+        type: 'panel', wall: 'south', at: -8, width: 3.4, height: 2.4,
+        title: 'The Galleries',
+        text:
+          'West: 1. The Price Up Front\n' +
+          'East: 2. Ways to Pay\n' +
+          'North-west: 3. What Failure Takes\n' +
+          'North-east: 4. Same Price, Different Weight',
       },
-      { type: 'painting', wall: 'west', at: -7, width: 2.4, height: 1.8, title: 'Hall Piece I', description: PLACEHOLDER },
-      { type: 'painting', wall: 'west', at: 7,  width: 2.4, height: 1.8, title: 'Hall Piece II', description: PLACEHOLDER },
-      { type: 'painting', wall: 'east', at: -7, width: 2.4, height: 1.8, title: 'Hall Piece III', description: PLACEHOLDER },
-      { type: 'painting', wall: 'east', at: 7,  width: 2.4, height: 1.8, title: 'Hall Piece IV', description: PLACEHOLDER },
-      {
-        type: 'panel', wall: 'south', at: -8, width: 3, height: 2,
-        title: 'Galleries',
-        text: 'West: Origins. East: Turning Points. North-west: People & Voices. North-east: Legacy.',
-      },
-      {
-        type: 'panel', wall: 'south', at: 8, width: 3, height: 2,
-        title: 'Timeline',
-        text: 'Add a short timeline of key dates here so visitors have context before entering the galleries.',
-      },
+      { type: 'panel', wall: 'south', at: 8, width: 3.4, height: 2.4, title: 'The Big Idea', text: PITCH },
+      empty('west', -7), empty('west', 7),
+      empty('east', -7), empty('east', 7),
     ],
     decor: [
       { type: 'bench', x: -5, z: 5 },
@@ -139,76 +139,105 @@ export const ROOMS = [
     ],
   },
 
-  // ------------------------------------------------- GALLERY 1 (WEST)
+  // ---------------------------------------- 3. GALLERY 1 (WEST): THE PRICE UP FRONT
   {
-    id: 'origins',
-    name: 'Gallery 1: Origins',
+    id: 'price',
+    name: 'Gallery 1: The Price Up Front',
     x: -24, z: -19, w: 20, d: 16,
     floor: 'wood', floorColor: '#c9a882', wallColor: '#f6f6f3', accent: '#2f6fde', featureWall: 'west',
     exhibits: [
-      { type: 'panel', wall: 'east', at: -5, width: 2.4, height: 1.8, title: 'Origins', text: 'Introduce this gallery: where does the story begin?' },
-      { type: 'painting', wall: 'north', at: -5, title: 'Origins I', description: PLACEHOLDER },
-      { type: 'painting', wall: 'north', at: 4, title: 'Origins II', description: PLACEHOLDER },
-      { type: 'painting', wall: 'west', at: 0, width: 3.2, height: 2.2, title: 'Origins III', description: PLACEHOLDER },
-      { type: 'painting', wall: 'south', at: -5, title: 'Origins IV', description: PLACEHOLDER },
-      { type: 'painting', wall: 'south', at: 4, title: 'Origins V', description: PLACEHOLDER },
-      { type: 'pedestal', x: -3, z: 0, shape: 'icosahedron', color: '#7fb3d5', title: 'Artifact A', description: PLACEHOLDER },
-      { type: 'pedestal', x: 3, z: 0, shape: 'box', color: '#c0392b', title: 'Artifact B', description: PLACEHOLDER },
+      {
+        type: 'panel', wall: 'east', at: -5, width: 3.2, height: 2.2,
+        title: 'The Price Up Front',
+        text:
+          'What you pay before knowing if it will work, usually with no refund.\n\n' +
+          'In Dickens: Betsey pays David\'s premium.\n' +
+          'Today: tuition, exam and licensing fees, unpaid internships.',
+      },
+      empty('north', -5), empty('north', 4),
+      empty('west', 0, { width: 3.2, height: 2.2 }),
+      empty('south', -5), empty('south', 4),
+      emptyPlinth(-3, 0), emptyPlinth(3, 0),
     ],
     decor: [{ type: 'bench', x: 0, z: 4 }],
   },
 
-  // ------------------------------------------------- GALLERY 2 (EAST)
+  // ---------------------------------------- 4. GALLERY 2 (EAST): WAYS TO PAY
   {
-    id: 'turning-points',
-    name: 'Gallery 2: Turning Points',
+    id: 'ways',
+    name: 'Gallery 2: Ways to Pay',
     x: 24, z: -19, w: 20, d: 16,
     floor: 'wood', floorColor: '#c9a882', wallColor: '#f6f6f3', accent: '#e4572e', featureWall: 'east',
     exhibits: [
-      { type: 'panel', wall: 'west', at: -5, width: 2.4, height: 1.8, title: 'Turning Points', text: 'Introduce this gallery: which moments changed everything?' },
-      { type: 'painting', wall: 'north', at: -4, title: 'Turning Point I', description: PLACEHOLDER },
-      { type: 'painting', wall: 'north', at: 5, title: 'Turning Point II', description: PLACEHOLDER },
-      { type: 'painting', wall: 'east', at: 0, width: 3.2, height: 2.2, title: 'Turning Point III', description: PLACEHOLDER },
-      { type: 'painting', wall: 'south', at: -4, title: 'Turning Point IV', description: PLACEHOLDER },
-      { type: 'painting', wall: 'south', at: 5, title: 'Turning Point V', description: PLACEHOLDER },
-      { type: 'pedestal', x: -3, z: 0, shape: 'torus', color: '#e67e22', title: 'Artifact C', description: PLACEHOLDER },
-      { type: 'pedestal', x: 3, z: 0, shape: 'cone', color: '#ecf0f1', title: 'Artifact D', description: PLACEHOLDER },
+      {
+        type: 'panel', wall: 'west', at: -5, width: 3.2, height: 2.4,
+        title: 'Ways to Pay',
+        text:
+          'The route available to you, and what each one costs.\n\n' +
+          '• Patron or family pays\n• Status or merit pays\n• Borrow\n• Someone else\'s credit\n' +
+          '• Pay with time\n• Performance or deception\n• Leverage over others\n\n' +
+          'Today: parents, loans, scholarships, working through school.',
+      },
+      empty('north', -4), empty('north', 5),
+      empty('east', 0, { width: 3.2, height: 2.2 }),
+      empty('south', -4), empty('south', 5),
+      emptyPlinth(-3, 0), emptyPlinth(3, 0),
     ],
     decor: [{ type: 'bench', x: 0, z: 4 }],
   },
 
-  // ------------------------------------------- GALLERY 3 (NORTH-WEST)
+  // ---------------------------------------- 5. GALLERY 3 (NORTH-WEST): WHAT FAILURE TAKES
   {
-    id: 'people',
-    name: 'Gallery 3: People & Voices',
+    id: 'failure',
+    name: 'Gallery 3: What Failure Takes',
     x: -7, z: -41, w: 14, d: 20,
     floor: 'concrete', floorColor: '#d6d6d2', wallColor: '#f6f6f3', accent: '#1f9d6b', featureWall: 'north',
     exhibits: [
-      { type: 'panel', wall: 'south', at: -4.5, width: 2.2, height: 1.6, title: 'People & Voices', text: 'Introduce the people at the center of your story.' },
-      { type: 'painting', wall: 'west', at: -5, width: 1.6, height: 2.2, title: 'Portrait I', description: PLACEHOLDER },
-      { type: 'painting', wall: 'west', at: 3, width: 1.6, height: 2.2, title: 'Portrait II', description: PLACEHOLDER },
-      { type: 'painting', wall: 'east', at: -5, width: 1.6, height: 2.2, title: 'Portrait III', description: PLACEHOLDER },
-      { type: 'painting', wall: 'east', at: 3, width: 1.6, height: 2.2, title: 'Portrait IV', description: PLACEHOLDER },
-      { type: 'painting', wall: 'north', at: 0, width: 3.5, height: 2.4, title: 'Group Portrait', description: PLACEHOLDER },
-      { type: 'pedestal', x: 0, z: -2, shape: 'sphere', color: '#d4af37', title: 'Personal Object', description: PLACEHOLDER },
+      {
+        type: 'panel', wall: 'south', at: -4.5, width: 2.6, height: 2,
+        title: 'What Failure Takes',
+        text:
+          'What a mistake takes from you.\n\n' +
+          'In Dickens: Betsey catches David; no one catches Heep or Micawber.\n' +
+          'Today: the same missed payment, with or without savings or family behind it.',
+      },
+      empty('west', -5, { width: 1.6, height: 2.2 }), empty('west', 3, { width: 1.6, height: 2.2 }),
+      empty('east', -5, { width: 1.6, height: 2.2 }), empty('east', 3, { width: 1.6, height: 2.2 }),
+      empty('north', 0, { width: 3.5, height: 2.4 }),
+      emptyPlinth(0, -2),
     ],
-    decor: [{ type: 'bench', x: 0, z: 4, rotation: 0 }],
+    decor: [{ type: 'bench', x: 0, z: 4 }],
   },
 
-  // ------------------------------------------- GALLERY 4 (NORTH-EAST)
+  // ---------------------------------------- 6. GALLERY 4 (NORTH-EAST): SAME PRICE, DIFFERENT WEIGHT
   {
-    id: 'legacy',
-    name: 'Gallery 4: Legacy',
+    id: 'weight',
+    name: 'Gallery 4: Same Price, Different Weight',
     x: 7, z: -41, w: 14, d: 20,
     floor: 'concrete', floorColor: '#d6d6d2', wallColor: '#f6f6f3', accent: '#7b5cf0', featureWall: 'north',
     exhibits: [
-      { type: 'panel', wall: 'south', at: 4.5, width: 2.2, height: 1.6, title: 'Legacy', text: 'Wrap up your story: what is the lasting impact today?' },
-      { type: 'painting', wall: 'west', at: -5, title: 'Legacy I', description: PLACEHOLDER },
-      { type: 'painting', wall: 'west', at: 3, title: 'Legacy II', description: PLACEHOLDER },
-      { type: 'painting', wall: 'east', at: -5, title: 'Legacy III', description: PLACEHOLDER },
-      { type: 'painting', wall: 'east', at: 3, title: 'Legacy IV', description: PLACEHOLDER },
-      { type: 'painting', wall: 'north', at: 0, width: 3.5, height: 2.4, title: 'Looking Forward', description: PLACEHOLDER },
-      { type: 'pedestal', x: 0, z: -2, shape: 'icosahedron', color: '#9ad1d4', title: 'Final Artifact', description: PLACEHOLDER },
+      {
+        type: 'panel', wall: 'south', at: -4.5, width: 2.6, height: 2.2,
+        title: 'Same Price, Different Weight',
+        text:
+          '• The price can look fair on paper, since everyone faces the same number.\n' +
+          '• For David, it\'s one cost among many, covered by a patron. For someone without a cushion, it means ' +
+          'borrowing, years of work, or a risky route.\n' +
+          '• The price comes before you know whether it will pay off, so the buyer carries all the risk.',
+      },
+      {
+        type: 'panel', wall: 'south', at: 4.5, width: 2.6, height: 2.2,
+        title: 'Objections',
+        text:
+          '"A fixed price is neutral." The price is equal, but its weight isn\'t.\n' +
+          '"Merit and scholarships pay the price." They do, but they must be kept, and losing one costs more for people with no cushion.\n' +
+          '"Heep is guilty." Yes. Poverty doesn\'t excuse him; it narrows his routes and removes his safety net.\n' +
+          '"Today there are loans, bankruptcy, and aid." Those tools only help if you understand them.',
+      },
+      empty('west', -5), empty('west', 3),
+      empty('east', -5), empty('east', 3),
+      empty('north', 0, { width: 3.5, height: 2.4 }),
+      emptyPlinth(0, -2),
     ],
     decor: [{ type: 'bench', x: 0, z: 4 }],
   },

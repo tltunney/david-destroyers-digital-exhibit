@@ -1,19 +1,26 @@
-# David Destroyers Digital Exhibit
+# What Trying Costs: A David Destroyers Digital Exhibit
 
 A 3D walk-through museum that runs in the web browser, built with [Three.js](https://threejs.org/).
-Visitors enter through a **Lobby**, walk into the **Main Hall**, and branch off into four galleries.
+
+**Thesis (short version):** Debt doesn't decide who succeeds. It decides what trying costs, how you have to pay,
+and what failing takes from you. The full thesis hangs in the Main Hall, next to a bust of David Copperfield.
 
 ```
-            ┌──────────┬──────────┐
-            │ Gallery 3│ Gallery 4│
-            │  People  │  Legacy  │
-   ┌────────┴───┬──────┴──────┬───┴────────┐
-   │ Gallery 1  │  Main Hall  │ Gallery 2  │
-   │  Origins   │             │  Turning   │
-   └────────────┴──────┬──────┴────────────┘
-                       │   Lobby   │
-                       └───────────┘
+                ┌────────────────┬────────────────┐
+                │   Gallery 3    │   Gallery 4    │
+                │  What Failure  │  Same Price,   │
+                │     Takes      │Different Weight│
+   ┌────────────┴───┬────────────┴───┬────────────┴───┐
+   │   Gallery 1    │   Main Hall    │   Gallery 2    │
+   │ The Price Up   │ thesis + bust  │  Ways to Pay   │
+   │     Front      │                │                │
+   └────────────────┴───┬────────┬───┴────────────────┘
+                        │ Lobby  │
+                        └────────┘
 ```
+
+Each gallery has an intro panel with its part of the thesis. Its picture frames and plinths are **empty slots**
+("Exhibit coming soon") waiting for the team's exhibits.
 
 ## Running it
 
