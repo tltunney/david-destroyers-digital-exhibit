@@ -1226,18 +1226,29 @@ function buildPedestal(room, ex) {
   holder.rotation.y = turn;
 
   if (ex.spotlight) {
-    // a statue on a tall plinth needs a wider beam to light it head to foot
-    const spot = new THREE.SpotLight(0xfff3e2, 45, 14, ex.plinth ? 0.45 : 0.35, 0.6, 1);
-    spot.position.set(px, room.height - 0.3, pz + 3);
-    spot.target = holder;
+    if (ex.plinth) {
+      // a monument: a key light high in the dome in front, and a softer one behind so its back isn't dark
+      const reach = Math.max(3, scale * 1.2);
+      const high = room.height + scale * 0.5;
+      addSpot(px + Math.sin(turn) * reach, high, pz + Math.cos(turn) * reach, holder, 58, 0.5, true);
+      addSpot(px - Math.sin(turn + 0.6) * reach, high, pz - Math.cos(turn + 0.6) * reach, holder, 20, 0.5, false);
+    } else addSpot(px, room.height - 0.3, pz + 3, holder, 45, 0.35, true);
+  }
+}
+
+function addSpot(x, y, z, target, intensity, angle, shadows) {
+  const spot = new THREE.SpotLight(0xfff3e2, intensity, 24, angle, 0.6, 1);
+  spot.position.set(x, y, z);
+  spot.target = target;
+  if (shadows) {
     spot.castShadow = true;
     spot.shadow.mapSize.set(1024, 1024);
     spot.shadow.bias = -0.0004;
     spot.shadow.normalBias = 0.02;
     spot.shadow.camera.near = 1;
-    spot.shadow.camera.far = 15;
-    parent.add(spot);
+    spot.shadow.camera.far = 24;
   }
+  parent.add(spot);
 }
 
 // A monument plinth for a full-length statue: a cream marble step and moldings around a darker

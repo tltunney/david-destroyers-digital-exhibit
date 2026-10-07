@@ -69,7 +69,7 @@ To play your own royalty-free track instead, set `music.file` in `js/config.js`.
   `featureWall: 'north'` paints one wall in the room's accent color, `woodWall: 'north'` covers a wall in light wood slats,
   `ceiling: 'wood'` gives a wood-slat ceiling, and `skylight: true` adds a glowing ceiling skylight.
 - **The statue**: the Rotunda centerpiece is `assets/models/copperfield.glb`, a full-length David in a frock coat
-  holding a book and his top hat, on a monument plinth (`plinth: { width, height, inscription }`). It is sculpted in
+  holding a book and his top hat, shown 5.17 m tall like Michelangelo's David (`scale` in the config), on a monument plinth (`plinth: { width, height, inscription }`). It is sculpted in
   code: edit the pose or costume in `tools/statue/make-statue.mjs`, run `node tools/statue/make-statue.mjs`, and check
   it in `tools/statue/preview.html`. If the model can't load, the older bust (`shape: 'bust'`) shows instead.
   Pedestals also take `spin`, `facing`, and `spotlight`.

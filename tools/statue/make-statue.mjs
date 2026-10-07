@@ -18,11 +18,12 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const OUT = resolve(dirname(fileURLToPath(import.meta.url)), '../../assets/models/copperfield.glb');
+// STATUE_OUT=file.glb writes somewhere else; STATUE_PARTS=head meshes only the head (for quick previews).
+const OUT = process.env.STATUE_OUT || resolve(dirname(fileURLToPath(import.meta.url)), '../../assets/models/copperfield.glb');
 // The head is meshed on a finer grid than the body; the seam between them hides inside the high collar.
 const PARTS = [
-  { name: 'body', cell: 0.0085, min: [-0.5, -0.005, -0.3], max: [0.42, 1.6, 0.36] },
-  { name: 'head', cell: 0.0026, min: [-0.14, 1.535, -0.14], max: [0.16, 1.885, 0.18] },
+  { name: 'body', cell: 0.0075, min: [-0.5, -0.005, -0.3], max: [0.42, 1.6, 0.36] },
+  { name: 'head', cell: 0.0021, min: [-0.15, 1.545, -0.16], max: [0.16, 1.89, 0.17] },
 ];
 
 // ---------------------------------------------------------------- vector and SDF helpers
@@ -124,73 +125,134 @@ const J = {
   lShoulder: [0.192, 1.43, -0.005], lElbow: [0.255, 1.18, -0.045], lWrist: [0.152, 1.16, 0.13],
   neckBase: [0, 1.44, 0], neckTop: [0.006, 1.62, 0.02],
 };
-const HEAD = { c: [0.006, 1.697, 0.024], r: [0.095, 0.124, 0.11], yaw: 0.26, pitch: -0.05 };
+// The head is sculpted in its own frame: origin in the middle of the skull, x to his left, y up,
+// z out of the face. Proportions follow the usual canon for an adult: eyes halfway between the top
+// of the head and the chin, the face in three equal parts (hairline to brow, brow to the base of the
+// nose, nose to chin), ears between the brow and the base of the nose, eyes one eye-width apart.
+// Like Michelangelo's David, the head is made a little large because it is seen from far below.
+const HEAD = { c: [0.006, 1.734, 0.022], yaw: 0.26, pitch: 0.1, scale: 1.05 };
+const EYE = { x: 0.031, y: -0.01, z: 0.066, r: 0.0125 };
 
-// Head features, as offsets on a unit sphere (face toward +z), carried over from the bust.
-const FACE = [
-  [[0, 0.25, 0.95], [0.5, 0.075, 0.3], 0.075], // brow ridge
-  [[0, 0.55, 0.82], [0.5, 0.25, 0.3], 0.02], // forehead
-  [[0, 0.2, 0.98], [0.07, 0.06, 0.2], -0.02], // between the brows
-  [[0, 0.02, 1], [0.06, 0.12, 0.2], 0.035], // bridge of the nose
-  [[0, -0.12, 1], [0.075, 0.1, 0.2], 0.075],
-  [[0, -0.22, 0.97], [0.08, 0.065, 0.2], 0.115], // tip of the nose
-  [[0, -0.345, 0.95], [0.05, 0.03, 0.1], -0.006],
-  [[0, -0.425, 0.94], [0.14, 0.03, 0.15], 0.03], // upper lip
-  [[0, -0.47, 0.94], [0.15, 0.012, 0.15], -0.022], // line between the lips
-  [[0, -0.515, 0.91], [0.11, 0.035, 0.15], 0.035], // lower lip
-  [[0, -0.6, 0.87], [0.12, 0.035, 0.15], -0.025], // fold under the lip
-  [[0, -0.7, 0.76], [0.22, 0.12, 0.25], 0.1], // chin
-];
-for (const s of [-1, 1]) {
-  FACE.push(
-    [[s * 0.32, 0.11, 0.94], [0.17, 0.1, 0.2], -0.14], // eye socket
-    [[s * 0.32, 0.08, 0.965], [0.075, 0.05, 0.1], 0.065], // eyeball
-    [[s * 0.31, 0.075, 0.99], [0.022, 0.022, 0.1], -0.018], // drilled pupil, as in Victorian portrait busts
-    [[s * 0.32, 0.125, 0.96], [0.08, 0.018, 0.1], 0.012], // upper lid
-    [[s * 0.33, 0.01, 0.95], [0.09, 0.025, 0.1], 0.01], // lower lid
-    [[s * 0.52, -0.06, 0.8], [0.2, 0.13, 0.25], 0.07], // cheekbone
-    [[s * 0.42, -0.36, 0.8], [0.14, 0.14, 0.3], -0.025], // cheek hollow
-    [[s * 0.62, -0.5, 0.45], [0.22, 0.2, 0.28], 0.06], // angle of the jaw
-    [[s * 0.98, 0.02, -0.05], [0.07, 0.22, 0.15], 0.13], // ear
-    [[s * 0.11, -0.28, 0.97], [0.055, 0.045, 0.1], 0.035], // nostril wing
-    [[s * 0.21, -0.39, 0.92], [0.035, 0.09, 0.1], -0.018], // smile line
-    [[s * 0.19, -0.475, 0.93], [0.04, 0.04, 0.1], -0.015], // corner of the mouth
-  );
+// distance with x mirrored, for features that come in pairs
+const pair = (f) => (q) => f([Math.abs(q[0]), q[1], q[2]]);
+const carve = (d, cut, k) => smax(d, -cut, k);
+
+function face(q) {
+  const m = [Math.abs(q[0]), q[1], q[2]];
+  // skull and the mass of the face
+  let d = ellipsoid(q, [0, 0.022, -0.012], [0.073, 0.09, 0.097]); // cranium
+  d = smin(d, ellipsoid(q, [0, -0.035, 0.02], [0.056, 0.05, 0.056]), 0.03); // cheeks and upper jaw
+  d = smin(d, ellipsoid(q, [0, -0.072, 0.03], [0.041, 0.038, 0.046]), 0.03); // lower face
+  d = smin(d, ellipsoid(m, [0.047, -0.022, 0.045], [0.018, 0.013, 0.022]), 0.02); // cheekbones
+  d = smin(d, ellipsoid(m, [0.036, -0.058, 0.048], [0.02, 0.024, 0.022]), 0.025); // full young cheeks
+  d = smin(d, ellipsoid(m, [0.058, 0.0, 0.025], [0.014, 0.03, 0.035]), 0.03); // temples
+  d = smin(d, limb(m, [0.05, -0.045, -0.022], [0.044, -0.084, -0.008], 0.013, 0.013), 0.025); // back of the jaw
+  d = smin(d, limb(m, [0.044, -0.086, -0.006], [0.015, -0.114, 0.064], 0.012, 0.013), 0.025); // jawline
+  d = smin(d, ellipsoid(q, [0, -0.11, 0.067], [0.021, 0.018, 0.02]), 0.02); // chin
+  d = smin(d, ellipsoid(q, [0, -0.07, 0.058], [0.03, 0.028, 0.026]), 0.03); // around the mouth
+  d = smin(d, limb(m, [0.01, 0.006, 0.085], [0.03, 0.011, 0.083], 0.0068, 0.0068), 0.016); // brow ridge, arched
+  d = smin(d, limb(m, [0.03, 0.011, 0.083], [0.05, 0.005, 0.068], 0.0068, 0.005), 0.016);
+  d = smin(d, ellipsoid(q, [0, 0.004, 0.082], [0.012, 0.012, 0.008]), 0.012); // between the brows
+
+  // eye sockets, eyeballs, lids
+  d = carve(d, ellipsoid(m, [EYE.x + 0.001, EYE.y + 0.001, 0.087], [0.0155, 0.0115, 0.012]), 0.012);
+  d = smin(d, ellipsoid(m, [0.012, -0.014, 0.081], [0.007, 0.016, 0.008]), 0.008); // sides of the nose, between the eyes
+  const e = [m[0] - EYE.x, m[1] - EYE.y, m[2] - EYE.z];
+  let eye = len3(...e) - EYE.r;
+  // a shallow drilled pupil, as Victorian sculptors often carved them, so he seems to look at you
+  const g = len3(e[0] + 0.0015, e[1] + 0.0005, e[2] - EYE.r); // from the front of the eye (looking a touch inward)
+  eye = carve(eye, g - 0.0029, 0.0012);
+  const upper = EYE.y + 0.0055 - 30 * e[0] * e[0];
+  const lower = EYE.y - 0.006 + 24 * e[0] * e[0];
+  const lidUp = smax(len3(...e) - (EYE.r + 0.0016), upper - m[1], 0.0015);
+  const lidLow = smax(len3(...e) - (EYE.r + 0.0011), m[1] - lower, 0.0015);
+  eye = smin(eye, Math.min(lidUp, lidLow), 0.0015);
+  d = smin(d, eye, 0.003);
+
+  // nose
+  d = smin(d, limb([q[0] * 1.2, q[1], q[2]], [0, 0.0, 0.086], [0, -0.039, 0.1], 0.0062, 0.0095), 0.012); // bridge
+  d = smin(d, sphere(q, [0, -0.0425, 0.097], 0.0077), 0.012); // tip
+  d = smin(d, sphere(m, [0.0105, -0.0485, 0.089], 0.0058), 0.009); // wings
+  d = smin(d, ellipsoid(q, [0, -0.052, 0.096], [0.0045, 0.004, 0.008]), 0.004);
+  d = carve(d, ellipsoid(m, [0.007, -0.0555, 0.093], [0.0032, 0.002, 0.0042], [0, 0, 0.3]), 0.002); // nostrils
+
+  // mouth: lips with a slight upturn at the corners
+  d = carve(d, ellipsoid(q, [0, -0.0615, 0.094], [0.0038, 0.006, 0.003]), 0.003); // groove under the nose
+  for (const s of [-1, 1]) d = smin(d, ellipsoid(q, [s * 0.008, -0.0688, 0.0868], [0.013, 0.0058, 0.0072], [0, 0, s * 0.1]), 0.008); // upper lip
+  d = smin(d, ellipsoid(q, [0, -0.0815, 0.0826], [0.0165, 0.0066, 0.0075]), 0.008); // lower lip
+  // the lips meet in a soft crease, the upper overhanging the lower a little
+  const crease = -0.0752 + 5 * q[0] * q[0];
+  d += 0.0018 * Math.exp(-(((q[1] - crease) / 0.0016) ** 2)) * smoothstep(0.022, 0.012, Math.abs(q[0])) * smoothstep(0.075, 0.085, q[2]);
+  d = carve(d, ellipsoid(q, [0, -0.093, 0.09], [0.014, 0.0038, 0.006]), 0.006); // under the lower lip
+
+  // ears: tipped back a little, with a hollow inside the rim
+  const ear = (p) => {
+    let a = ellipsoid(p, [0.075, -0.022, -0.014], [0.009, 0.029, 0.017], [0.2, 0.25, 0]);
+    a = carve(a, ellipsoid(p, [0.082, -0.026, -0.011], [0.005, 0.016, 0.009], [0.2, 0.25, 0]), 0.003);
+    return a;
+  };
+  d = smin(d, pair(ear)(q), 0.006);
+  return d;
 }
 
-// Head and hair in the head's own unit-sphere space; returns a distance in meters.
+// Long, thick, wavy hair parted on his left and swept across the forehead, falling over the
+// tops of the ears to the collar, with short side-whiskers (after Maclise's 1839 portrait of the
+// young Dickens, David's original, and Phiz's plates of the grown-up David).
+function hair(q) {
+  const [x, y, z] = q;
+  const az = Math.atan2(x, z); // 0 = front, + = his left
+  const a = Math.abs(az);
+  // how far down the hair comes, going round the head
+  let line =
+    a < 0.5 ? 0.06 + 0.014 * az :
+    a < 0.85 ? mix(0.06 + 0.007 * Math.sign(az), 0.036, (a - 0.5) / 0.35) :
+    a < 1.35 ? mix(0.03, -0.03, (a - 0.85) / 0.5) :
+    a < 2.3 ? mix(-0.03, -0.125, (a - 1.35) / 0.95) : -0.125;
+  line -= 0.014 * Math.exp(-(((az + 0.35) / 0.3) ** 2)); // the sweep dips onto his right temple
+  const grow = smoothstep(line - 0.004, line + 0.03, y);
+  if (grow <= 0) return 1;
+
+  // the mass of the hair: a cap over the skull and a fall at the back reaching the collar
+  let mass = ellipsoid(q, [0, 0.016, -0.016], [0.081, 0.097, 0.103]);
+  mass = smin(mass, ellipsoid(q, [0, -0.035, -0.04], [0.08, 0.085, 0.078]), 0.03);
+  mass = smin(mass, ellipsoid(q, [-0.015, 0.08, -0.002], [0.055, 0.028, 0.058], [0, 0, 0.2]), 0.03); // wave on top, toward his right
+  for (const s of [-1, 1]) mass = smin(mass, ellipsoid(q, [s * 0.068, -0.01, -0.032], [0.022, 0.042, 0.046]), 0.03); // over the ears
+
+  // locks: ridges running along the direction the hair is combed, with a slow wave across them
+  const n = [x / 0.09, (y - 0.018) / 0.1, (z + 0.014) / 0.106];
+  const L = len3(...n) || 1;
+  const front = smoothstep(0.2, 0.7, n[2] / L) * smoothstep(-0.1, 0.4, n[1] / L);
+  // combed direction: across the forehead toward his right at the front, down and back elsewhere
+  const F = [mix(0, -1, front), mix(-1, -0.25, front), mix(-0.35, 0, front)];
+  const nn = [n[0] / L, n[1] / L, n[2] / L];
+  const perp = [nn[1] * F[2] - nn[2] * F[1], nn[2] * F[0] - nn[0] * F[2], nn[0] * F[1] - nn[1] * F[0]];
+  const along = x * F[0] + y * F[1] + z * F[2];
+  const across = x * perp[0] + y * perp[1] + z * perp[2];
+  const lock = Math.sin(across * 260 + Math.sin(along * 110) * 2);
+  const waves = (0.0018 * Math.sin(along * 140 + az * 2) + 0.003 * lock) * (1 - 0.6 * front);
+  const part = 0.004 * Math.exp(-(((x - 0.03) / 0.003) ** 2)) * smoothstep(0.03, 0.08, y) * smoothstep(-0.02, 0.04, z);
+
+  const h = mass - waves + part;
+  // thin out to nothing at the hairline so it meets the skin softly
+  return smax(h, -(grow - 0.5) * 0.02, 0.006);
+}
+
+function whiskers(q) {
+  const m = [Math.abs(q[0]), q[1], q[2]];
+  let w = roundBox(m, [0.068, -0.02, 0.012], [0.006, 0.024, 0.008], 0.005, [0, 0.35, 0]);
+  return w;
+}
+
 function headAndHair(p) {
   let q = [p[0] - HEAD.c[0], p[1] - HEAD.c[1], p[2] - HEAD.c[2]];
   q = unrot(q, HEAD.pitch, HEAD.yaw, 0);
-  q = [q[0] / HEAD.r[0], q[1] / HEAD.r[1], q[2] / HEAD.r[2]];
-  const L = len3(...q);
-  if (L > 1.6) return (L - 1.3) * HEAD.r[0]; // far away: cheap estimate
-  const n = [q[0] / L, q[1] / L, q[2] / L];
-  const jaw = smoothstep(0.1, -0.9, n[1]);
-  const taper = 1 - 0.12 * jaw; // the jaw narrows toward the chin
-  const qt = [q[0] / taper, q[1], q[2]];
-  const Lt = len3(...qt);
-  const nt = [qt[0] / Lt, qt[1] / Lt, qt[2] / Lt];
-  let d = 0;
-  for (const [c, r, a] of FACE) d += bump(nt, c, r, a);
-  const head = Lt - (1 + d);
-
-  // hair: high hairline at the forehead, above the ears at the sides, low at the nape;
-  // thick waves swept back from a part on his left
-  const f = nt[2];
-  const hairline = f >= 0 ? mix(0.2, 0.36, f) : mix(0.2, -0.62, -f);
-  const grow = smoothstep(hairline - 0.08, hairline + 0.16, nt[1]);
-  const partX = -0.3;
-  const waves = Math.sin((nt[0] - partX) * 12 + nt[2] * 4 + Math.sin(nt[1] * 6) * 1.6) * 0.02;
-  const strands = Math.sin((nt[0] - partX) * 55 + nt[2] * 8) * 0.004;
-  let h = 0.085 + waves + strands;
-  h += bump(nt, [-0.05, 0.78, 0.58], [0.45, 0.22, 0.32], 0.11);
-  h += bump(nt, [0.4, 0.72, 0.25], [0.35, 0.25, 0.4], 0.045);
-  h += bump(nt, [-0.55, 0.55, 0.35], [0.25, 0.3, 0.4], 0.03);
-  h += bump(nt, [partX, 0.9, 0.3], [0.025, 0.35, 0.7], -0.035);
-  h -= bump(nt, [Math.sign(nt[0]) * 0.95, 0, 0], [0.12, 0.3, 0.25], 0.05);
-  const hair = Lt - (0.93 + (0.07 + h) * grow);
-  return smin(head, hair, 0.02) * HEAD.r[0] * 0.95;
+  q = [q[0] / HEAD.scale, q[1] / HEAD.scale, q[2] / HEAD.scale];
+  const far = len3(q[0] / 0.1, (q[1] - 0.0) / 0.14, q[2] / 0.13);
+  if (far > 1.5) return (far - 1.35) * 0.1 * HEAD.scale; // far away: cheap estimate
+  let d = face(q);
+  d = smin(d, whiskers(q), 0.004);
+  d = smin(d, hair(q), 0.006);
+  return d * HEAD.scale;
 }
 
 // The frock coat's skirt: a flared elliptical cone from the waist to just below the knee.
@@ -253,7 +315,7 @@ function body(p) {
   for (const y of [1.3, 1.25, 1.2]) d = smin(d, sphere(p, [0.002, y, mix(0.108, 0.122, (y - 1.2) / 0.1)], 0.008), 0.003);
 
   // neck (slightly thinner than the head mesh's neck so the two never overlap exactly)
-  d = smin(d, limb(p, J.neckBase, J.neckTop, 0.059, 0.055), 0.03);
+  d = smin(d, limb(p, [0, 1.44, -0.012], [0.004, 1.63, -0.01], 0.055, 0.051), 0.03);
   // tall Victorian collar and a wrapped cravat, which hide the seam with the head
   d = smin(d, cylinder(p, [0.003, 1.52, 0.008], 0.072, 0.06, [0.12, 0, 0]), 0.012);
   d = smin(d, cylinder(p, [0.003, 1.475, 0.01], 0.074, 0.022, [0.12, 0, 0]), 0.012);
@@ -297,7 +359,7 @@ function body(p) {
 
 // The head mesh: neck, head and hair.
 function headPart(p) {
-  return smin(limb(p, J.neckBase, J.neckTop, 0.062, 0.058), headAndHair(p), 0.025);
+  return smin(limb(p, [0, 1.44, -0.012], [0.004, 1.63, -0.01], 0.058, 0.054), headAndHair(p), 0.025);
 }
 const SDF = { body, head: headPart };
 
@@ -415,12 +477,11 @@ function addView(typed, target, byteStride) {
   return bufferViews.length - 1;
 }
 
-for (const part of PARTS) {
+for (const part of PARTS.filter((p) => !process.env.STATUE_PARTS || process.env.STATUE_PARTS.split(',').includes(p.name))) {
   console.time(part.name);
   const { positions, normals, indices } = surfaceNets(SDF[part.name], part);
   console.timeEnd(part.name);
   const count = positions.length / 3;
-  if (count >= 65536) throw new Error(`${part.name}: ${count} vertices is too many for 16-bit indices; use a coarser cell`);
   console.log(`${part.name}: ${count} vertices, ${indices.length / 3} triangles`);
   const lo = [Infinity, Infinity, Infinity];
   const hi = [-Infinity, -Infinity, -Infinity];
@@ -442,11 +503,12 @@ for (const part of PARTS) {
   }
   const posView = addView(qpos, 34962, 8);
   const norView = addView(qnor, 34962, 4);
-  const idxView = addView(new Uint16Array(indices), 34963);
+  const wide = count > 65535; // 16-bit indices when they fit
+  const idxView = addView(wide ? new Uint32Array(indices) : new Uint16Array(indices), 34963);
   accessors.push(
     { bufferView: posView, componentType: 5122, normalized: true, count, type: 'VEC3', min: [-32767, -32767, -32767], max: [32767, 32767, 32767] },
     { bufferView: norView, componentType: 5120, normalized: true, count, type: 'VEC3' },
-    { bufferView: idxView, componentType: 5123, count: indices.length, type: 'SCALAR' },
+    { bufferView: idxView, componentType: wide ? 5125 : 5123, count: indices.length, type: 'SCALAR' },
   );
   const a0 = accessors.length - 3;
   meshes.push({ name: part.name, primitives: [{ attributes: { POSITION: a0, NORMAL: a0 + 1 }, indices: a0 + 2, material: 0 }] });
