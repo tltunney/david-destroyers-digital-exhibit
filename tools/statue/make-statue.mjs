@@ -156,7 +156,7 @@ function face(q) {
 
   // eye sockets, eyeballs, lids
   d = carve(d, ellipsoid(m, [EYE.x + 0.001, EYE.y + 0.001, 0.087], [0.0155, 0.0115, 0.012]), 0.012);
-  d = smin(d, ellipsoid(m, [0.012, -0.014, 0.081], [0.007, 0.016, 0.008]), 0.008); // sides of the nose, between the eyes
+  d = smin(d, ellipsoid(m, [0.0095, -0.012, 0.08], [0.004, 0.011, 0.006]), 0.006); // soften the inner corners of the eyes
   const e = [m[0] - EYE.x, m[1] - EYE.y, m[2] - EYE.z];
   let eye = len3(...e) - EYE.r;
   // a shallow drilled pupil, as Victorian sculptors often carved them, so he seems to look at you
@@ -170,9 +170,9 @@ function face(q) {
   d = smin(d, eye, 0.003);
 
   // nose
-  d = smin(d, limb([q[0] * 1.2, q[1], q[2]], [0, 0.0, 0.086], [0, -0.039, 0.1], 0.0062, 0.0095), 0.012); // bridge
-  d = smin(d, sphere(q, [0, -0.0425, 0.097], 0.0077), 0.012); // tip
-  d = smin(d, sphere(m, [0.0105, -0.0485, 0.089], 0.0058), 0.009); // wings
+  d = smin(d, limb([q[0] * 1.6, q[1], q[2]], [0, 0.002, 0.087], [0, -0.037, 0.102], 0.0062, 0.0086), 0.008); // bridge: narrow and straight
+  d = smin(d, sphere(q, [0, -0.042, 0.0985], 0.0072), 0.01); // tip
+  d = smin(d, sphere(m, [0.0098, -0.0482, 0.089], 0.0055), 0.008); // wings
   d = smin(d, ellipsoid(q, [0, -0.052, 0.096], [0.0045, 0.004, 0.008]), 0.004);
   d = carve(d, ellipsoid(m, [0.007, -0.0555, 0.093], [0.0032, 0.002, 0.0042], [0, 0, 0.3]), 0.002); // nostrils
 

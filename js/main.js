@@ -1230,8 +1230,8 @@ function buildPedestal(room, ex) {
       // a monument: a key light high in the dome in front, and a softer one behind so its back isn't dark
       const reach = Math.max(3, scale * 1.2);
       const high = room.height + scale * 0.5;
-      addSpot(px + Math.sin(turn) * reach, high, pz + Math.cos(turn) * reach, holder, 58, 0.5, true);
-      addSpot(px - Math.sin(turn + 0.6) * reach, high, pz - Math.cos(turn + 0.6) * reach, holder, 20, 0.5, false);
+      addSpot(px + Math.sin(turn) * reach, high, pz + Math.cos(turn) * reach, holder, 85, 0.55, true);
+      addSpot(px - Math.sin(turn + 0.6) * reach, high, pz - Math.cos(turn + 0.6) * reach, holder, 28, 0.55, false);
     } else addSpot(px, room.height - 0.3, pz + 3, holder, 45, 0.35, true);
   }
 }
