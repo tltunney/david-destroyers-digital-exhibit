@@ -1509,22 +1509,120 @@ function buildPalm(g, seed) {
   return [0.7, 0.7];
 }
 
-// Bentwood hall stand with a coat hanging on it and an umbrella in the brass stand.
+// Bentwood hall stand (the Thonet kind every Victorian hallway had): curved legs, a turned post and
+// curling hooks, with an overcoat, a bowler hat and a furled umbrella. Made for a back-left corner:
+// the coat faces +x, -z.
+const COAT_MAT = {
+  wool: new THREE.MeshStandardMaterial({ color: 0x23293a, roughness: 0.95 }),
+  felt: new THREE.MeshStandardMaterial({ color: 0x1b1714, roughness: 0.8 }),
+  silk: new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.45 }),
+  horn: new THREE.MeshStandardMaterial({ color: 0x3b2416, roughness: 0.3 }),
+};
+function bentwood(g, points, radius = 0.016, material = MAT.mahogany) {
+  const curve = new THREE.CatmullRomCurve3(points.map(([x, y, z]) => new THREE.Vector3(x, y, z)));
+  const m = new THREE.Mesh(new THREE.TubeGeometry(curve, 24, radius, 8), material);
+  g.add(m);
+  return curve.getPoint(1);
+}
 function buildCoatStand(g) {
-  piece(g, new THREE.CylinderGeometry(0.22, 0.26, 0.05, 24), MAT.mahogany, 0, 0.025, 0);
-  piece(g, new THREE.CylinderGeometry(0.028, 0.035, 1.85, 12), MAT.mahogany, 0, 0.95, 0);
-  piece(g, new THREE.SphereGeometry(0.05, 12, 8), MAT.mahogany, 0, 1.9, 0);
-  for (let k = 0; k < 6; k++) {
-    const hook = piece(g, new THREE.CylinderGeometry(0.012, 0.012, 0.22, 8), MAT.gilt, 0, 1.72, 0);
-    hook.rotation.set(0.8, (k / 6) * Math.PI * 2, 0, 'YXZ');
-    hook.position.set(Math.sin((k / 6) * Math.PI * 2) * 0.07, 1.74, Math.cos((k / 6) * Math.PI * 2) * 0.07);
+  const around = (a, r, y) => [Math.cos(a) * r, y, Math.sin(a) * r];
+  // four legs sweeping out from the post to the floor, ending in a little upturned toe
+  for (let k = 0; k < 4; k++) {
+    const a = Math.PI / 4 + (k * Math.PI) / 2;
+    bentwood(g, [around(a, 0.02, 0.42), around(a, 0.1, 0.26), around(a, 0.22, 0.08), around(a, 0.33, 0.02), around(a, 0.37, 0.05)], 0.018);
   }
-  const coat = piece(g, new THREE.CylinderGeometry(0.1, 0.2, 0.85, 14), MAT.coat, 0.14, 1.32, 0.1);
-  coat.rotation.z = -0.08;
-  piece(g, new THREE.CylinderGeometry(0.11, 0.11, 0.5, 20, 1, true), MAT.gilt, 0.35, 0.25, -0.15);
-  piece(g, new THREE.CylinderGeometry(0.015, 0.015, 0.95, 8), MAT.trim, 0.35, 0.55, -0.15);
-  piece(g, new THREE.ConeGeometry(0.05, 0.35, 10), MAT.coat, 0.35, 0.68, -0.15);
-  return [0.75, 0.7];
+  // turned post with rings, and a finial
+  const profile = [[0.0, 0.3], [0.04, 0.3], [0.045, 0.36], [0.032, 0.42], [0.03, 0.9], [0.042, 0.94], [0.03, 0.98], [0.026, 1.55], [0.04, 1.6], [0.03, 1.64], [0.03, 1.8], [0.045, 1.84], [0.0, 1.86]];
+  piece(g, new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r, y)), 20), MAT.mahogany);
+  piece(g, new THREE.SphereGeometry(0.045, 16, 12), MAT.mahogany, 0, 1.9, 0);
+  // umbrella ring held out on short bentwood arms
+  piece(g, new THREE.TorusGeometry(0.17, 0.012, 8, 40).rotateX(Math.PI / 2), MAT.mahogany, 0, 0.6, 0);
+  for (let k = 0; k < 4; k++) {
+    const a = Math.PI / 4 + (k * Math.PI) / 2;
+    bentwood(g, [around(a, 0.03, 0.5), around(a, 0.1, 0.56), around(a, 0.17, 0.6)], 0.01);
+  }
+  // hooks: six curling up at the top, and shorter ones just below except where the coat hangs over them
+  const coatAngle = -Math.PI / 4; // toward +x, -z: into the room from the corner
+  const underCoat = (a) => Math.abs(Math.atan2(Math.sin(a - coatAngle), Math.cos(a - coatAngle))) < 1.4;
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * Math.PI * 2;
+    let end = bentwood(g, [around(a, 0.03, 1.66), around(a, 0.12, 1.7), around(a, 0.19, 1.8), around(a, 0.17, 1.9), around(a, 0.12, 1.88)], 0.012);
+    piece(g, new THREE.SphereGeometry(0.018, 10, 8), MAT.mahogany, end.x, end.y, end.z);
+    const b = a + Math.PI / 6;
+    if (underCoat(b)) continue;
+    end = bentwood(g, [around(b, 0.03, 1.46), around(b, 0.1, 1.48), around(b, 0.14, 1.56), around(b, 0.11, 1.6)], 0.011);
+    piece(g, new THREE.SphereGeometry(0.016, 10, 8), MAT.mahogany, end.x, end.y, end.z);
+  }
+
+  // overcoat hanging from the hook facing the room: a lathe-turned body flattened front to back,
+  // pressed into soft vertical folds that deepen toward the hem, with sleeves, collar and buttons
+  const coat = new THREE.Group();
+  coat.position.set(Math.cos(coatAngle) * 0.15, 1.78, Math.sin(coatAngle) * 0.15);
+  coat.rotation.y = Math.PI / 2 - coatAngle;
+  const L = 1.08;
+  const shape = [[0.0, 0], [0.07, -0.01], [0.15, -0.05], [0.18, -0.12], [0.18, -0.35], [0.19, -0.6], [0.23, -0.9], [0.25, -L], [0.0, -L]];
+  const body = new THREE.LatheGeometry(shape.map(([r, y]) => new THREE.Vector2(r, y)), 48);
+  const pos = body.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const a = Math.atan2(z, x);
+    const depth = Math.min(1, -y / L);
+    const fold = 1 + depth * (0.06 * Math.sin(a * 7) + 0.03 * Math.sin(a * 13 + 1));
+    pos.setXYZ(i, x * fold, y, z * fold * 0.5);
+  }
+  body.computeVertexNormals();
+  piece(coat, body, COAT_MAT.wool);
+  // collar turned up around the hook, and the front opening with three buttons
+  piece(coat, new THREE.TorusGeometry(0.1, 0.03, 10, 24, Math.PI * 1.3).rotateX(Math.PI / 2).rotateY(Math.PI * 0.85), COAT_MAT.wool, 0, -0.06, 0.02).scale.set(1, 1, 0.6);
+  piece(coat, new THREE.BoxGeometry(0.012, L - 0.25, 0.01), MAT.trim, 0.0, -0.13 - (L - 0.25) / 2, 0.093 + 0.005);
+  for (const by of [-0.32, -0.48, -0.64]) piece(coat, new THREE.SphereGeometry(0.012, 10, 8), COAT_MAT.horn, 0.03, by, 0.1);
+  // sleeves hanging at the sides, slightly forward
+  for (const s of [-1, 1]) {
+    const sleeve = piece(coat, new THREE.CapsuleGeometry(0.05, 0.5, 6, 14), COAT_MAT.wool, s * 0.19, -0.42, 0.03);
+    sleeve.rotation.z = s * 0.06;
+    sleeve.scale.set(1, 1, 0.85);
+    piece(coat, new THREE.TorusGeometry(0.048, 0.008, 8, 20).rotateX(Math.PI / 2), COAT_MAT.wool, s * 0.205, -0.71, 0.03); // cuff
+  }
+  coat.traverse((m) => m.isMesh && (m.castShadow = true));
+  g.add(coat);
+
+  // bowler hat on a top hook on the far side
+  const hat = new THREE.Group();
+  const hatAngle = -Math.PI / 2 - 0.6;
+  hat.position.set(Math.cos(hatAngle) * 0.16, 1.86, Math.sin(hatAngle) * 0.16);
+  hat.rotation.set(0.25, -hatAngle, 0.35);
+  piece(hat, new THREE.SphereGeometry(0.095, 24, 14, 0, Math.PI * 2, 0, Math.PI / 2), COAT_MAT.felt, 0, 0.0, 0).scale.set(1, 0.95, 1.12);
+  piece(hat, new THREE.CylinderGeometry(0.096, 0.098, 0.035, 24), COAT_MAT.felt, 0, -0.015, 0).scale.set(1, 1, 1.12);
+  piece(hat, new THREE.CylinderGeometry(0.098, 0.098, 0.02, 24), COAT_MAT.silk, 0, 0.012, 0).scale.set(1, 1, 1.12); // band
+  const brim = piece(hat, new THREE.TorusGeometry(0.13, 0.012, 8, 32).rotateX(Math.PI / 2), COAT_MAT.felt, 0, -0.032, 0);
+  brim.scale.set(1, 1, 1.12);
+  piece(hat, new THREE.CylinderGeometry(0.13, 0.13, 0.006, 32), COAT_MAT.felt, 0, -0.034, 0).scale.set(1, 1, 1.12);
+  hat.traverse((m) => m.isMesh && (m.castShadow = true));
+  g.add(hat);
+
+  // furled umbrella standing in the ring: pleated silk around the shaft, a strap, a hooked cane handle
+  const umb = new THREE.Group();
+  const ua = Math.PI / 5;
+  umb.position.set(Math.cos(ua) * 0.15, 0.03, Math.sin(ua) * 0.15);
+  umb.rotation.set(Math.sin(ua) * -0.12, 0, Math.cos(ua) * 0.12);
+  const canopy = new THREE.LatheGeometry([[0.006, 0.06], [0.02, 0.12], [0.045, 0.3], [0.04, 0.6], [0.022, 0.72], [0.008, 0.76]].map(([r, y]) => new THREE.Vector2(r, y)), 32);
+  const cp = canopy.attributes.position;
+  for (let i = 0; i < cp.count; i++) {
+    const a = Math.atan2(cp.getZ(i), cp.getX(i));
+    const pleat = 1 + 0.18 * Math.abs(Math.sin(a * 4));
+    cp.setXYZ(i, cp.getX(i) * pleat, cp.getY(i), cp.getZ(i) * pleat);
+  }
+  canopy.computeVertexNormals();
+  piece(umb, canopy, COAT_MAT.silk);
+  piece(umb, new THREE.CylinderGeometry(0.004, 0.006, 0.07, 8), MAT.gilt, 0, 0.03, 0); // ferrule
+  piece(umb, new THREE.CylinderGeometry(0.008, 0.008, 0.18, 8), MAT.mahogany, 0, 0.84, 0);
+  piece(umb, new THREE.TorusGeometry(0.044, 0.006, 6, 20).rotateX(Math.PI / 2), COAT_MAT.silk, 0, 0.42, 0); // strap
+  bentwood(umb, [[0, 0.92, 0], [0, 0.98, 0.01], [0, 1.0, 0.05], [0, 0.97, 0.08], [0, 0.92, 0.075]], 0.011, COAT_MAT.horn);
+  umb.traverse((m) => m.isMesh && (m.castShadow = true));
+  g.add(umb);
+  return [0.75, 0.75];
 }
 
 // Floor easel with the museum guide: a map of the building with "you are here".
