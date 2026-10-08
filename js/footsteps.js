@@ -1,16 +1,15 @@
-// Footsteps, made live with the Web Audio API (no sound files): a heel strike and a softer toe
-// for each step, shaped by what's underfoot. Wood knocks, marble clicks and rings around the dome,
-// a rug muffles the step almost to nothing.
+// Footsteps, made live with the Web Audio API (no sound files): a soft, short brush of a shoe sole,
+// just loud enough to notice. Hard floors are a touch brighter, a rug is barely a whisper.
 
 const SURFACES = {
-  wood: { freq: 650, q: 1.1, gain: 0.5, decay: 0.09, thump: 105, thumpGain: 0.32, echo: 0.12 },
-  marble: { freq: 2300, q: 0.9, gain: 0.32, decay: 0.05, thump: 150, thumpGain: 0.16, echo: 0.55 },
-  concrete: { freq: 1500, q: 0.8, gain: 0.32, decay: 0.06, thump: 120, thumpGain: 0.2, echo: 0.25 },
-  rug: { freq: 300, q: 0.7, gain: 0.22, decay: 0.07, thump: 85, thumpGain: 0.12, echo: 0 },
+  wood: { tone: 1100, gain: 0.5, attack: 0.012, decay: 0.12, echo: 0.04 },
+  marble: { tone: 1700, gain: 0.45, attack: 0.008, decay: 0.1, echo: 0.12 },
+  concrete: { tone: 1400, gain: 0.45, attack: 0.01, decay: 0.1, echo: 0.06 },
+  rug: { tone: 600, gain: 0.25, attack: 0.016, decay: 0.1, echo: 0 },
 };
 
 export class Footsteps {
-  constructor(volume = 0.35) {
+  constructor(volume = 0.12) {
     this.volume = volume;
     this.ctx = null;
   }
@@ -55,7 +54,7 @@ export class Footsteps {
     const s = SURFACES[surface] ?? SURFACES.wood;
     const t = ctx.currentTime;
     this.hit(s, t, 1);
-    this.hit(s, t + 0.055 + Math.random() * 0.02, 0.45); // the toe comes down just after the heel
+    this.hit(s, t + 0.07 + Math.random() * 0.03, 0.35); // the toe rolls down just after the heel
   }
 
   hit(s, t, level) {
@@ -64,15 +63,19 @@ export class Footsteps {
     const src = ctx.createBufferSource();
     src.buffer = this.noise;
     src.playbackRate.value = vary;
-    const filter = ctx.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.value = s.freq * vary;
-    filter.Q.value = s.q;
+    // soft: everything above the tone rolled off, and the very lowest rumble removed too
+    const low = ctx.createBiquadFilter();
+    low.type = 'lowpass';
+    low.frequency.value = s.tone * vary;
+    low.Q.value = 0.3;
+    const high = ctx.createBiquadFilter();
+    high.type = 'highpass';
+    high.frequency.value = 180;
     const env = ctx.createGain();
     env.gain.setValueAtTime(0.0001, t);
-    env.gain.linearRampToValueAtTime(s.gain * level, t + 0.004);
-    env.gain.exponentialRampToValueAtTime(0.0001, t + s.decay);
-    src.connect(filter).connect(env).connect(this.out);
+    env.gain.linearRampToValueAtTime(s.gain * level, t + s.attack);
+    env.gain.exponentialRampToValueAtTime(0.0001, t + s.attack + s.decay);
+    src.connect(low).connect(high).connect(env).connect(this.out);
     if (s.echo) {
       const send = ctx.createGain();
       send.gain.value = s.echo;
@@ -80,15 +83,5 @@ export class Footsteps {
     }
     src.start(t);
     src.stop(t + 0.2);
-
-    const osc = ctx.createOscillator();
-    osc.frequency.setValueAtTime(s.thump * vary, t);
-    osc.frequency.exponentialRampToValueAtTime(s.thump * 0.55, t + 0.07);
-    const body = ctx.createGain();
-    body.gain.setValueAtTime(s.thumpGain * level, t);
-    body.gain.exponentialRampToValueAtTime(0.0001, t + 0.08);
-    osc.connect(body).connect(this.out);
-    osc.start(t);
-    osc.stop(t + 0.1);
   }
 }
