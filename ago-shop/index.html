@@ -3,56 +3,71 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#0b0b0b">
+  <meta name="theme-color" content="#d42a2a">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Anton&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 fill=%22%230b0b0b%22/%3E%3Ctext x=%2232%22 y=%2246%22 font-family=%22Impact%22 font-size=%2236%22 fill=%22%23ff3b1f%22 text-anchor=%22middle%22%3EA%3C/text%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 fill=%22%23d42a2a%22/%3E%3Ctext x=%2232%22 y=%2246%22 font-family=%22Impact%22 font-size=%2236%22 fill=%22%23ffcc1a%22 text-anchor=%22middle%22%3EA%3C/text%3E%3C/svg%3E">
   <title>AGO — Official Store</title>
-  <meta name="description" content="AGO — heavyweight streetwear in limited runs. Shop the latest drop and join the list for early access.">
+  <meta name="description" content="AGO — reversible hero-themed streetwear. Orders ship daily. Shop the latest drop and join the list for early access.">
   <meta property="og:title" content="AGO — Official Store">
-  <meta property="og:description" content="Heavyweight streetwear. Limited runs. No restocks.">
+  <meta property="og:description" content="Two heroes. One zip-up. Reversible streetwear from @ago.shop_.">
 </head>
 <body data-page="home">
 <main id="main">
 
   <section class="hero">
-    <div class="hero-bg" aria-hidden="true"><span>AGO</span></div>
+    <div class="hero-half hero-red" aria-hidden="true"></div>
+    <div class="hero-half hero-blue" aria-hidden="true"></div>
     <div class="hero-inner">
-      <p class="eyebrow light" id="drop-name"></p>
-      <h1 class="hero-title">Made for<br>after hours.</h1>
-      <div class="countdown" id="countdown" aria-live="off"></div>
-      <div class="hero-ctas">
-        <a class="btn btn-accent" href="shop.html?drop=004">Shop the drop</a>
-        <a class="btn btn-ghost" href="#list">Get early access</a>
+      <div class="hero-copy">
+        <p class="caption-box">AGO × AVIANCE — OUT NOW</p>
+        <h1 class="hero-title"><span>Two heroes.</span><span>One zip-up.</span></h1>
+        <p class="hero-sub">The Spider-Man × Superman Reversible Zip-Up. Wear it red, flip it blue.</p>
+        <div class="hero-ctas">
+          <a class="btn btn-accent" href="product.html?id=spider-super-zip">Shop the zip-up</a>
+          <a class="btn btn-light" href="shop.html">Shop all</a>
+        </div>
       </div>
+      <div class="hero-art" id="hero-art" aria-hidden="true"></div>
     </div>
-    <a class="scroll-cue" href="#latest" aria-label="Scroll to latest drop">↓</a>
+    <div class="next-drop">
+      <span class="next-label">Next release: <b id="drop-name"></b></span>
+      <div class="countdown" id="countdown" aria-live="off"></div>
+    </div>
   </section>
 
   <div class="marquee" aria-hidden="true">
     <div class="marquee-track">
-      <span>LIMITED RUNS</span><span>✦</span><span>NO RESTOCKS</span><span>✦</span><span>HEAVYWEIGHT GOODS</span><span>✦</span><span>AGO WORLDWIDE</span><span>✦</span>
-      <span>LIMITED RUNS</span><span>✦</span><span>NO RESTOCKS</span><span>✦</span><span>HEAVYWEIGHT GOODS</span><span>✦</span><span>AGO WORLDWIDE</span><span>✦</span>
+      <span>REVERSIBLE</span><span>★</span><span>TWO LOOKS IN ONE</span><span>★</span><span>ORDERS SHIP DAILY</span><span>★</span><span>AGO × AVIANCE</span><span>★</span>
+      <span>REVERSIBLE</span><span>★</span><span>TWO LOOKS IN ONE</span><span>★</span><span>ORDERS SHIP DAILY</span><span>★</span><span>AGO × AVIANCE</span><span>★</span>
     </div>
   </div>
 
   <section class="section reveal" id="latest">
     <div class="section-head">
-      <div><p class="eyebrow">Drop 004</p><h2>Latest drop</h2></div>
-      <a class="text-link" href="shop.html?drop=004">View all →</a>
+      <div><p class="eyebrow">Out now</p><h2>Latest releases</h2></div>
+      <a class="text-link" href="shop.html">View all →</a>
     </div>
     <div class="grid" id="drop-grid"></div>
   </section>
 
-  <section class="editorial reveal">
-    <div class="ed-img ed-a" aria-hidden="true"><span>AFTER<br>HOURS</span></div>
-    <div class="ed-copy">
-      <p class="eyebrow light">The Lookbook</p>
-      <h2>Built heavy.<br>Cut boxy.<br>Made in small batches.</h2>
-      <p>Every AGO piece is made in one limited run. When it's gone, it's gone. That's why the list gets in first.</p>
-      <a class="btn btn-accent" href="shop.html">Shop the collection</a>
+  <section class="flip-section reveal">
+    <div class="flip-stage">
+      <div class="flip-card" id="flip-card">
+        <div class="flip-face flip-front" id="flip-front"></div>
+        <div class="flip-face flip-back" id="flip-back"></div>
+      </div>
+    </div>
+    <div class="flip-copy">
+      <p class="caption-box">Issue #02 — Reversible</p>
+      <h2>Spider side<br>or Super side?</h2>
+      <p>Every AGO reversible is two pieces in one. Red with the web on one side, blue with the star on the other. Flip it inside out and switch it up.</p>
+      <div class="flip-ctas">
+        <button class="btn btn-light" id="flip-btn" aria-pressed="false">⇄ Flip it</button>
+        <a class="btn btn-accent" href="shop.html?cat=zip-ups">Shop reversibles</a>
+      </div>
     </div>
   </section>
 
@@ -62,17 +77,17 @@
   </section>
 
   <section class="values reveal" aria-label="Why AGO">
-    <div><b>500gsm</b><span>Heavyweight fleece</span></div>
-    <div><b>1 run</b><span>Per design. No restocks.</span></div>
-    <div><b>1–3 days</b><span>Ships with tracking</span></div>
+    <div><b>2 in 1</b><span>Reversible pieces</span></div>
+    <div><b>Daily</b><span>Orders ship every day</span></div>
+    <div><b>Restocks</b><span>List members hear first</span></div>
     <div><b>14 days</b><span>Easy returns</span></div>
   </section>
 
   <section class="list-cta reveal" id="list">
     <div class="list-inner">
-      <p class="eyebrow light">The List</p>
-      <h2>Drops sell out.<br>The list gets in first.</h2>
-      <p>Get early access 30 minutes before every drop, plus restock alerts and members-only pieces.</p>
+      <p class="caption-box">The List</p>
+      <h2>Missed it?<br>Restocks happen.</h2>
+      <p>Get a text or email before every release and restock, plus first access to collabs.</p>
       <form class="signup-form big-signup">
         <label class="sr" for="list-email">Email</label>
         <input id="list-email" type="email" required placeholder="Email address" autocomplete="email">
@@ -87,7 +102,10 @@
   <section class="section reveal">
     <div class="section-head">
       <div><p class="eyebrow">Community</p><h2>Tag <a href="https://www.instagram.com/ago.shop_" target="_blank" rel="noopener">@ago.shop_</a> to be featured</h2></div>
-      <a class="text-link" href="https://www.instagram.com/ago.shop_" target="_blank" rel="noopener">Follow ↗</a>
+      <div class="social-links">
+        <a class="text-link" href="https://www.instagram.com/ago.shop_" target="_blank" rel="noopener">Instagram ↗</a>
+        <a class="text-link" href="https://www.tiktok.com/@ago.shop_" target="_blank" rel="noopener">TikTok ↗</a>
+      </div>
     </div>
     <div class="ig-grid" id="ig-grid"></div>
   </section>

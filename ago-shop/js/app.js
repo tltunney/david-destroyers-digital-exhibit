@@ -9,6 +9,8 @@ const byId = (id) => PRODUCTS.find((p) => p.id === id);
 const totalStock = (p) => Object.values(p.stock).reduce((a, b) => a + b, 0);
 const soldOut = (p) => totalStock(p) === 0;
 const lowStock = (p) => !soldOut(p) && totalStock(p) <= 8;
+const colorName = (p) => p.reversible ? p.sides.map((x) => x.name.replace(" side", "")).join(" / ") : p.sides[0].name;
+const swatch = (p) => p.reversible ? `linear-gradient(135deg, ${p.sides[0].base} 50%, ${p.sides[1].base} 50%)` : p.sides[0].base;
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
 const store = {
@@ -52,12 +54,11 @@ function renderChrome() {
         </button>
         <nav class="main-nav" aria-label="Main">
           <a href="shop.html" ${page === "shop" ? 'aria-current="page"' : ""}>Shop All</a>
-          <a href="shop.html?drop=004">Drop 004</a>
           ${CATEGORIES.slice(0, 2).map((c) => `<a href="shop.html?cat=${c.id}">${c.label}</a>`).join("")}
         </nav>
         <a href="index.html" class="logo" aria-label="${STORE.name} home">AGO<sup>®</sup></a>
         <div class="header-actions">
-          <a class="text-link hide-sm" href="index.html#list">Early Access</a>
+          <a class="text-link hide-sm" href="index.html#list">Restock Alerts</a>
           <a class="icon-btn hide-sm" href="${STORE.instagram}" target="_blank" rel="noopener" aria-label="Instagram">
             <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r=".6" fill="currentColor"/></svg>
           </a>
@@ -71,9 +72,9 @@ function renderChrome() {
     <div class="mobile-menu" id="mobile-menu" hidden>
       <nav aria-label="Mobile">
         <a href="shop.html">Shop All</a>
-        <a href="shop.html?drop=004">Drop 004</a>
         ${CATEGORIES.map((c) => `<a href="shop.html?cat=${c.id}">${c.label}</a>`).join("")}
-        <a href="index.html#list">Early Access</a>
+        <a href="index.html#list">Restock Alerts</a>
+        <a href="${STORE.tiktok}" target="_blank" rel="noopener">TikTok ↗</a>
         <a href="${STORE.instagram}" target="_blank" rel="noopener">Instagram ↗</a>
       </nav>
     </div>
@@ -120,11 +121,11 @@ function renderChrome() {
         <div>
           <h3>Follow</h3>
           <a href="${STORE.instagram}" target="_blank" rel="noopener">Instagram ${esc(STORE.handle)}</a>
-          <a href="#" aria-disabled="true">TikTok</a>
+          <a href="${STORE.tiktok}" target="_blank" rel="noopener">TikTok ${esc(STORE.handle)}</a>
         </div>
         <form class="footer-signup signup-form">
           <h3>Get on the list</h3>
-          <p>Early access to every drop. No spam.</p>
+          <p>Restock alerts and first access to every release.</p>
           <div class="field-row">
             <label class="sr" for="foot-email">Email</label>
             <input id="foot-email" type="email" required placeholder="Email address" autocomplete="email">
@@ -134,7 +135,7 @@ function renderChrome() {
       </div>
       <div class="footer-base">
         <span>© ${new Date().getFullYear()} ${STORE.name}. All rights reserved.</span>
-        <span>Limited runs · No restocks</span>
+        <span>Orders ship daily</span>
       </div>
     </footer>
   `);
@@ -187,7 +188,7 @@ function renderCart() {
       <a class="line-img" href="product.html?id=${p.id}" style="--bg:${tint(p)}">${media(p)}</a>
       <div class="line-info">
         <a href="product.html?id=${p.id}" class="line-name">${esc(p.name)}</a>
-        <span class="muted">${esc(p.color)} · ${l.size}</span>
+        <span class="muted">${esc(colorName(p))} · ${l.size}</span>
         <div class="qty">
           <button data-q="${i}" data-d="-1" aria-label="Decrease quantity">−</button>
           <span>${l.qty}</span>
@@ -216,7 +217,7 @@ function renderCart() {
     <p class="eyebrow">Complete the fit</p>
     <a class="upsell" href="product.html?id=${up.id}">
       <span class="line-img" style="--bg:${tint(up)}">${media(up)}</span>
-      <span><strong>${esc(up.name)}</strong><span class="muted">${esc(up.color)} · ${money(up.price)}</span></span>
+      <span><strong>${esc(up.name)}</strong><span class="muted">${esc(colorName(up))} · ${money(up.price)}</span></span>
       <span class="upsell-cta">View →</span>
     </a>` : "";
 }
@@ -226,7 +227,7 @@ const MODALS = {
   size: () => `<h2 id="modal-title">Size Guide</h2><p class="muted">${esc(SIZE_GUIDE.note)}</p>
     <table class="size-table">${SIZE_GUIDE.rows.map((r, i) => `<tr>${r.map((c) => (i ? `<td>${c}</td>` : `<th>${c}</th>`)).join("")}</tr>`).join("")}</table>`,
   shipping: () => `<h2 id="modal-title">Shipping</h2>
-    <p>Orders ship within 1–3 business days. Free US shipping over ${money(STORE.freeShippingAt)}. International shipping available at checkout. You'll get a tracking link by email.</p>`,
+    <p>Orders ship daily. Free US shipping over ${money(STORE.freeShippingAt)}. International shipping available at checkout. You'll get a tracking link by email.</p>`,
   returns: () => `<h2 id="modal-title">Returns & Exchanges</h2>
     <p>Unworn items with tags can be returned or exchanged within 14 days of delivery. Final-sale items are marked on the product page.</p>`,
 };
@@ -250,22 +251,22 @@ function wireSignup(form) {
     e.preventDefault();
     // Hook this up to Klaviyo / Mailchimp / Shopify Customer API.
     form.reset();
-    toast("You're on the list. Watch your inbox before the next drop.");
+    toast("You're on the list. We'll hit you before the next release or restock.");
   });
 }
 
 // ── product card ─────────────────────────────────────────────
 function tint(p) {
   // light background behind each garment, chosen from how dark the garment is
-  const h = p.hex.replace("#", "");
-  const lum = (parseInt(h.slice(0, 2), 16) * 299 + parseInt(h.slice(2, 4), 16) * 587 + parseInt(h.slice(4, 6), 16) * 114) / 1000;
-  return lum > 170 ? "#d9d5cc" : "#e9e6df";
+  const base = p.sides[0].base.toLowerCase();
+  return { "#d42a2a": "#cfe0ff", "#1d3f9e": "#ffe39a", "#121212": "#ffd6cc", "#151515": "#ffd6cc", "#f4f1e8": "#cfe0ff" }[base] || "#fff3c4";
 }
 
 function badge(p) {
   if (soldOut(p)) return `<span class="badge badge-out">Sold Out</span>`;
   if (lowStock(p)) return `<span class="badge badge-low">Almost Gone</span>`;
   if (p.tag) return `<span class="badge">${esc(p.tag)}</span>`;
+  if (p.reversible) return `<span class="badge">Reversible</span>`;
   return "";
 }
 
@@ -274,11 +275,12 @@ function card(p) {
   const variants = PRODUCTS.filter((q) => q.name === p.name);
   return `<article class="card ${soldOut(p) ? "is-out" : ""}">
     <div class="media-wrap">
-    <a class="card-media" href="product.html?id=${p.id}" style="--bg:${tint(p)}" aria-label="${esc(p.name)}, ${esc(p.color)}">
+    <a class="card-media" href="product.html?id=${p.id}" style="--bg:${tint(p)}" aria-label="${esc(p.name)}, ${esc(colorName(p))}">
       ${badge(p)}
       <span class="front">${media(p)}</span>
       <span class="back">${media(p, true)}</span>
     </a>
+    ${p.reversible ? `<button class="flip-btn" data-flip aria-label="Show other side">⇄ Flip</button>` : ""}
     ${soldOut(p) ? "" : `<div class="quick-add" aria-label="Quick add ${esc(p.name)}">
       <span>Quick add</span>
       <div>${sizes.map(([s, q]) => `<button data-add="${p.id}" data-size="${s}" ${q ? "" : "disabled"}>${s}</button>`).join("")}</div>
@@ -287,11 +289,11 @@ function card(p) {
     <div class="card-info">
       <div>
         <a href="product.html?id=${p.id}" class="card-name">${esc(p.name)}</a>
-        <span class="muted">${esc(p.color)}</span>
+        <span class="muted">${p.collab ? esc(p.collab) + " · " : ""}${esc(colorName(p))}</span>
       </div>
       <strong>${money(p.price)}</strong>
     </div>
-    ${variants.length > 1 ? `<div class="swatches">${variants.map((v) => `<a href="product.html?id=${v.id}" title="${esc(v.color)}" style="--c:${v.hex}" ${v.id === p.id ? 'aria-current="true"' : ""}></a>`).join("")}</div>` : ""}
+    ${variants.length > 1 ? `<div class="swatches">${variants.map((v) => `<a href="product.html?id=${v.id}" title="${esc(colorName(v))}" style="--c:${swatch(v)}" ${v.id === p.id ? 'aria-current="true"' : ""}></a>`).join("")}</div>` : ""}
   </article>`;
 }
 
@@ -299,6 +301,8 @@ function wireQuickAdd(root) {
   root.addEventListener("click", (e) => {
     const b = e.target.closest("[data-add]");
     if (b) addToCart(b.dataset.add, b.dataset.size);
+    const f = e.target.closest("[data-flip]");
+    if (f) f.closest(".card").classList.toggle("flipped");
   });
 }
 
@@ -310,15 +314,25 @@ function initHome() {
   $("#drop-name").textContent = STORE.nextDrop.name;
   const tick = () => {
     const d = target - Date.now();
-    if (d <= 0) { el.innerHTML = `<span class="live">● LIVE NOW</span>`; return; }
+    if (d <= 0) { el.innerHTML = `<span class="live">● OUT NOW</span>`; return; }
     const parts = [Math.floor(d / 864e5), Math.floor(d / 36e5) % 24, Math.floor(d / 6e4) % 60, Math.floor(d / 1e3) % 60];
     el.innerHTML = parts.map((v, i) => `<div><b>${String(v).padStart(2, "0")}</b><small>${["Days", "Hrs", "Min", "Sec"][i]}</small></div>`).join("");
     setTimeout(tick, 1000);
   };
   tick();
 
+  // hero + flip section use the flagship reversible
+  const hero = byId("spider-super-zip") || PRODUCTS[0];
+  $("#hero-art").innerHTML = `<div class="hero-piece a">${media(hero)}</div><div class="hero-piece b">${media(hero, true)}</div>`;
+  $("#flip-front").innerHTML = media(hero);
+  $("#flip-back").innerHTML = media(hero, true);
+  $("#flip-btn").addEventListener("click", (e) => {
+    const on = $("#flip-card").classList.toggle("flipped");
+    e.currentTarget.setAttribute("aria-pressed", on);
+  });
+
   const grid = $("#drop-grid");
-  grid.innerHTML = [...PRODUCTS].sort((a, b) => b.drop.localeCompare(a.drop) || soldOut(a) - soldOut(b)).slice(0, 8).map(card).join("");
+  grid.innerHTML = PRODUCTS.filter((p) => !soldOut(p)).slice(0, 8).map(card).join("");
   wireQuickAdd(grid);
 
   $("#cat-grid").innerHTML = CATEGORIES.map((c) => {
@@ -330,8 +344,8 @@ function initHome() {
   }).join("");
 
   $("#ig-grid").innerHTML = PRODUCTS.slice(0, 6).map((p, i) => `
-    <a href="${STORE.instagram}" target="_blank" rel="noopener" style="--bg:${i % 2 ? "#141414" : tint(p)}" aria-label="View on Instagram">
-      ${media(p, i % 2 === 1)}
+    <a href="${STORE.instagram}" target="_blank" rel="noopener" style="--bg:${tint(p)}" aria-label="View on Instagram">
+      ${media(p, i % 3 === 1)}
       <span class="ig-hover">View on IG ↗</span>
     </a>`).join("");
 }
@@ -381,7 +395,7 @@ function initShop() {
 
 function initProduct() {
   const p = byId(new URLSearchParams(location.search).get("id")) || PRODUCTS[0];
-  document.title = `${p.name} — ${p.color} | ${STORE.name}`;
+  document.title = `${p.name} — ${colorName(p)} | ${STORE.name}`;
   const variants = PRODUCTS.filter((q) => q.name === p.name);
   const sizes = Object.entries(p.stock);
   let size = null;
@@ -390,18 +404,19 @@ function initProduct() {
     <nav class="crumbs" aria-label="Breadcrumb"><a href="shop.html">Shop</a> / <a href="shop.html?cat=${p.category}">${CATEGORIES.find((c) => c.id === p.category).label}</a></nav>
     <div class="pdp-grid">
       <div class="gallery">
-        <div class="gal-main" style="--bg:${tint(p)}">${badge(p)}${media(p)}</div>
-        <div class="gal-main" style="--bg:${tint(p)}">${media(p, true)}</div>
+        <div class="gal-main" style="--bg:${tint(p)}">${badge(p)}${p.reversible ? `<span class="side-tag">${esc(p.sides[0].name)}</span>` : ""}${media(p)}</div>
+        <div class="gal-main" style="--bg:${p.reversible ? tint({ sides: [p.sides[1]] }) : tint(p)}">${p.reversible ? `<span class="side-tag">${esc(p.sides[1].name)}</span>` : ""}${media(p, true)}</div>
       </div>
       <div class="buybox">
-        <p class="eyebrow">Drop ${p.drop}</p>
+        <p class="eyebrow">${p.collab ? esc(p.collab) : "AGO"}${p.reversible ? " · Reversible" : ""}</p>
         <h1>${esc(p.name)}</h1>
         <p class="price">${money(p.price)}</p>
         <p class="pay-split muted">or 4 payments of ${money(p.price / 4)} at checkout</p>
 
-        ${variants.length > 1 ? `<div class="opt"><span class="opt-label">Color — <b>${esc(p.color)}</b></span>
-          <div class="swatches lg">${variants.map((v) => `<a href="product.html?id=${v.id}" title="${esc(v.color)}" style="--c:${v.hex}" ${v.id === p.id ? 'aria-current="true"' : ""}></a>`).join("")}</div></div>`
-        : `<div class="opt"><span class="opt-label">Color — <b>${esc(p.color)}</b></span></div>`}
+        ${variants.length > 1 ? `<div class="opt"><span class="opt-label">Color — <b>${esc(colorName(p))}</b></span>
+          <div class="swatches lg">${variants.map((v) => `<a href="product.html?id=${v.id}" title="${esc(colorName(v))}" style="--c:${swatch(v)}" ${v.id === p.id ? 'aria-current="true"' : ""}></a>`).join("")}</div></div>`
+        : `<div class="opt"><span class="opt-label">${p.reversible ? "Sides" : "Color"} — <b>${esc(colorName(p))}</b></span></div>`}
+        ${p.reversible ? `<p class="rev-note">⇄ Two looks in one. Flip it inside out to switch sides.</p>` : ""}
 
         <div class="opt">
           <div class="opt-row"><span class="opt-label">Size</span>${sizes.length > 1 ? `<button class="link-btn" data-modal="size">Size guide</button>` : ""}</div>
@@ -419,13 +434,13 @@ function initProduct() {
 
         <ul class="perks">
           <li>Free US shipping over ${money(STORE.freeShippingAt)}</li>
-          <li>Ships in 1–3 business days</li>
+          <li>Orders ship daily</li>
           <li>14-day returns & exchanges</li>
         </ul>
 
         <details open><summary>Details</summary><p>${esc(p.desc)}</p></details>
         <details><summary>Fit</summary><p>${esc(SIZE_GUIDE.note)}</p></details>
-        <details><summary>Shipping & Returns</summary><p>Orders ship within 1–3 business days with tracking. Unworn items with tags can be returned within 14 days.</p></details>
+        <details><summary>Shipping & Returns</summary><p>Orders ship daily with tracking. Unworn items with tags can be returned within 14 days.</p></details>
       </div>
     </div>
     <div class="sticky-atc" aria-hidden="true">
