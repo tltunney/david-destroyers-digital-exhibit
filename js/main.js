@@ -11,6 +11,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { surfaceMaps, TILE_SIZE, SMALL_SCREEN } from './textures.js';
 import { MUSEUM, ROOMS } from './config.js';
 import { AmbientMusic } from './music.js';
+import { Footsteps } from './footsteps.js';
 
 // ---------------------------------------------------------------- constants
 const WALL_THICKNESS = 0.4;
@@ -64,6 +65,7 @@ const interactables = []; // meshes with userData.exhibit
 const blockers = [];      // walls, so exhibits can't be clicked through them
 const spinners = [];      // objects that slowly rotate
 const animators = [];     // functions called every frame with the time in seconds
+const rugs = [];          // where the rugs lie (world space), for the sound of footsteps
 
 for (const room of ROOMS) {
   room.height ??= DEFAULT_HEIGHT;
@@ -644,6 +646,8 @@ function buildRoom(room) {
     else if (ex.type === 'panel') buildPanel(room, ex);
     else if (ex.type === 'pedestal') buildPedestal(room, ex);
     else if (ex.type === 'case') buildCase(room, ex);
+    else if (ex.type === 'door') buildFakeDoor(room, ex);
+    else if (ex.type === 'poster') buildPoster(room, ex);
     else console.warn(`Unknown exhibit type "${ex.type}" in room "${room.id}"`);
   }
   for (const item of room.decor ?? []) buildDecor(room, item);
@@ -748,7 +752,7 @@ function buildWall(room, side) {
 
     if (bottom !== 0) continue;
     // wall finishes stop at the frame of the glass entrance doors
-    for (const [p, q] of aroundEntrance(room, side, a, b)) {
+    for (const [p, q] of aroundWallDoors(room, side, a, b)) {
       const pm = (p + q) / 2;
       const pl = q - p;
       if (room.wainscot) addWainscot(room, side, pm, pl);
@@ -810,16 +814,7 @@ function buildWall(room, side) {
   }
 }
 
-// The stretch [a, b] of a wall, minus the glass entrance doors and their frame if they're on this wall.
 const ENTRANCE_W = 3.4;
-function aroundEntrance(room, side, a, b) {
-  if (room.entrance !== side) return [[a, b]];
-  const gap = ENTRANCE_W / 2 + 0.1;
-  const out = [];
-  if (a < -gap) out.push([a, Math.min(b, -gap)]);
-  if (b > gap) out.push([Math.max(a, gap), b]);
-  return out;
-}
 
 // Victorian wall finish below the wallpaper: raised mahogany panels, a chair rail, and a tall skirting.
 const WAINSCOT_H = 1.1;
@@ -1902,6 +1897,17 @@ function buildFixtures(room) {
     for (const oy of [-0.025, 0.025]) piece(out, new THREE.BoxGeometry(0.03, 0.028, 0.004), MAT.trim, 0, oy, 0.013);
     mountOnWall(room, { wall: 'south', at: door.at + door.width / 2 + 0.6 }, out, 0.3);
   }
+  // fire alarm pull station by the extinguisher, with a horn-strobe above it
+  const pull = new THREE.Group();
+  piece(pull, new THREE.BoxGeometry(0.13, 0.17, 0.05), FIXTURE_MAT.red, 0, 0, 0.025);
+  piece(pull, new THREE.PlaneGeometry(0.12, 0.15), new THREE.MeshStandardMaterial({ map: fireAlarmTexture('pull'), roughness: 0.4 }), 0, 0, 0.0505);
+  piece(pull, new THREE.BoxGeometry(0.07, 0.025, 0.02), FIXTURE_MAT.white, 0, 0.005, 0.06);
+  mountOnWall(room, { wall: 'east', at: d / 2 - 1.8 }, pull, 1.2);
+  const strobe = new THREE.Group();
+  piece(strobe, new THREE.BoxGeometry(0.13, 0.17, 0.05), FIXTURE_MAT.white, 0, 0, 0.025);
+  piece(strobe, new THREE.PlaneGeometry(0.12, 0.15), new THREE.MeshStandardMaterial({ map: fireAlarmTexture('strobe'), roughness: 0.4 }), 0, 0, 0.0505);
+  piece(strobe, new THREE.BoxGeometry(0.07, 0.04, 0.03), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.1, transparent: true, opacity: 0.8 }), 0, 0.035, 0.065);
+  mountOnWall(room, { wall: 'east', at: d / 2 - 1.8 }, strobe, 2.3);
   // linear floor grilles for the air conditioning, along both long walls
   const grilleTex = canvasTexture(256, 32, (ctx, cw, ch) => {
     ctx.fillStyle = '#2b2b2b';
@@ -2218,6 +2224,10 @@ function buildRug(room, item) {
   rug.position.set(room.x + (item.x ?? 0), 0.006, room.z + (item.z ?? 0));
   rug.rotation.y = THREE.MathUtils.degToRad(item.rotation ?? 0);
   rug.receiveShadow = true;
+  // remember where it lies, so footsteps go quiet on it
+  const center = toWorld(rug.position.x, rug.position.z);
+  const turn = frame.rot + rug.rotation.y;
+  rugs.push({ x: center.x, z: center.z, hw: w / 2, hd: d / 2, c: Math.cos(turn), s: Math.sin(turn) });
   // fringe along the two short ends
   const fringeTex = canvasTexture(256, 32, (ctx, cw, ch) => {
     for (let x = 0; x < cw; x += 3) {
@@ -2329,6 +2339,169 @@ function buildWallTitle(room) {
   const holder = new THREE.Group();
   holder.add(title);
   mountOnWall(room, { wall: side, at: 0 }, holder, room.height - 0.78);
+}
+
+// A panelled mahogany door that doesn't open (staff rooms, restrooms): architrave, four raised
+// panels, a brass knob and kick plate, and a small brass sign.
+const DOOR_W = 1.1;
+const DOOR_H = 2.4;
+function buildFakeDoor(room, ex) {
+  const g = new THREE.Group();
+  const box = (w, h, d, mat, x, y, z) => piece(g, new THREE.BoxGeometry(w, h, d), mat, x, y, z);
+  // architrave: two posts and a head with a little cornice
+  for (const s of [-1, 1]) box(0.13, DOOR_H + 0.06, 0.1, MAT.mahogany, s * (DOOR_W / 2 + 0.065), (DOOR_H + 0.06) / 2, 0.05);
+  box(DOOR_W + 0.26, 0.16, 0.1, MAT.mahogany, 0, DOOR_H + 0.11, 0.05);
+  box(DOOR_W + 0.34, 0.04, 0.13, MAT.mahogany, 0, DOOR_H + 0.21, 0.065);
+  // the door itself, set back a little in its frame
+  box(DOOR_W, DOOR_H, 0.05, MAT.mahogany, 0, DOOR_H / 2, 0.04);
+  const panel = (w, h, y) => {
+    for (const s of [-1, 1]) {
+      box(w, h, 0.012, MAT.trim, s * (DOOR_W / 4 + 0.005), y, 0.068);
+      box(w - 0.06, h - 0.06, 0.02, MAT.mahogany, s * (DOOR_W / 4 + 0.005), y, 0.074);
+    }
+  };
+  panel(0.38, 1.0, 1.72);
+  panel(0.38, 0.72, 0.6);
+  // brass knob with its round rose, keyhole escutcheon, and kick plate
+  piece(g, new THREE.CylinderGeometry(0.035, 0.035, 0.012, 20).rotateX(Math.PI / 2), MAT.brass, DOOR_W / 2 - 0.1, 1.0, 0.071);
+  piece(g, new THREE.SphereGeometry(0.03, 16, 12), MAT.brass, DOOR_W / 2 - 0.1, 1.0, 0.11);
+  piece(g, new THREE.CylinderGeometry(0.008, 0.012, 0.035, 10).rotateX(Math.PI / 2), MAT.brass, DOOR_W / 2 - 0.1, 1.0, 0.088);
+  box(0.03, 0.06, 0.006, MAT.brass, DOOR_W / 2 - 0.1, 0.9, 0.068);
+  box(DOOR_W - 0.08, 0.2, 0.006, MAT.brass, 0, 0.12, 0.068);
+  if (ex.sign) {
+    const sign = piece(g, new THREE.PlaneGeometry(0.62, 0.126), new THREE.MeshBasicMaterial({ map: plaqueTexture(ex.sign) }), 0, 1.58, 0.0855);
+    sign.material.polygonOffset = true;
+    sign.material.polygonOffsetFactor = -1;
+  }
+  g.traverse((m) => m.isMesh && (m.receiveShadow = true));
+  mountOnWall(room, ex, g, 0);
+}
+
+// The stretch [a, b] of a wall, minus anything that sits in the wall from the floor up
+// (the glass entrance doors, panelled doors), so skirting and panelling stop at their frames.
+function aroundWallDoors(room, side, a, b) {
+  const gaps = [];
+  if (room.entrance === side) gaps.push([-ENTRANCE_W / 2 - 0.1, ENTRANCE_W / 2 + 0.1]);
+  for (const ex of room.exhibits ?? []) {
+    if (ex.type === 'door' && ex.wall === side) gaps.push([(ex.at ?? 0) - DOOR_W / 2 - 0.12, (ex.at ?? 0) + DOOR_W / 2 + 0.12]);
+  }
+  let pieces = [[a, b]];
+  for (const [g0, g1] of gaps) {
+    pieces = pieces.flatMap(([p, q]) => {
+      const out = [];
+      if (p < g0) out.push([p, Math.min(q, g0)]);
+      if (q > g1) out.push([Math.max(p, g1), q]);
+      return out;
+    });
+  }
+  return pieces;
+}
+
+// Framed exhibition poster behind glass, in a slim gilt frame.
+function posterTexture(design) {
+  return canvasTexture(640, 912, (ctx, w, h) => {
+    const serif = 'Georgia, "Times New Roman", serif';
+    ctx.textAlign = 'center';
+    if (design === 'micawber') {
+      ctx.fillStyle = '#1f3a2e';
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = '#c9a24a';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(26, 26, w - 52, h - 52);
+      ctx.strokeRect(36, 36, w - 72, h - 72);
+      ctx.fillStyle = '#c9a24a';
+      ctx.font = `bold 150px ${serif}`;
+      ctx.fillText('“', w / 2, 210);
+      ctx.fillStyle = '#efe6d2';
+      ctx.font = `italic 36px ${serif}`;
+      const quote = 'Annual income twenty pounds, annual expenditure nineteen nineteen and six, result happiness. Annual income twenty pounds, annual expenditure twenty pounds ought and six, result misery.';
+      const lines = wrapText(ctx, quote, w - 130);
+      lines.forEach((line, i) => ctx.fillText(line, w / 2, 260 + i * 50));
+      const y = 260 + lines.length * 50 + 40;
+      ctx.fillStyle = '#c9a24a';
+      ctx.fillRect(w / 2 - 60, y, 120, 3);
+      ctx.font = `600 30px ${serif}`;
+      ctx.fillText('MR. MICAWBER', w / 2, y + 60);
+      ctx.font = `italic 26px ${serif}`;
+      ctx.fillStyle = '#d9cfb8';
+      ctx.fillText('David Copperfield, Chapter 12', w / 2, y + 100);
+    } else {
+      ctx.fillStyle = '#efe6d2';
+      ctx.fillRect(0, 0, w, h);
+      // paper grain
+      const r = seededRandom('poster');
+      for (let i = 0; i < 5000; i++) {
+        ctx.fillStyle = `rgba(90,70,40,${r() * 0.06})`;
+        ctx.fillRect(r() * w, r() * h, 2, 2);
+      }
+      ctx.fillStyle = '#6e1b21';
+      ctx.font = `600 24px ${FONT}`;
+      if ('letterSpacing' in ctx) ctx.letterSpacing = '6px';
+      ctx.fillText('AN EXHIBITION IN FOUR GALLERIES', w / 2, 90);
+      if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+      ctx.fillStyle = '#1d1a17';
+      ctx.font = `bold 108px ${serif}`;
+      ['WHAT', 'TRYING', 'COSTS'].forEach((word, i) => ctx.fillText(word, w / 2, 220 + i * 112));
+      // a gold sovereign
+      const cy = 610;
+      ctx.fillStyle = '#c9a24a';
+      ctx.beginPath();
+      ctx.arc(w / 2, cy, 92, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#8a6a26';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(w / 2, cy, 78, 0, Math.PI * 2);
+      ctx.stroke();
+      for (let k = 0; k < 60; k++) {
+        const a = (k / 60) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(w / 2 + Math.cos(a) * 84, cy + Math.sin(a) * 84);
+        ctx.lineTo(w / 2 + Math.cos(a) * 90, cy + Math.sin(a) * 90);
+        ctx.stroke();
+      }
+      ctx.fillStyle = '#5a4316';
+      ctx.font = `bold 80px ${serif}`;
+      ctx.fillText('£', w / 2, cy + 28);
+      ctx.fillStyle = '#6e1b21';
+      ctx.font = `italic 32px ${serif}`;
+      wrapText(ctx, 'Debt and its price in Charles Dickens’s David Copperfield', w - 120).forEach((line, i) => ctx.fillText(line, w / 2, 765 + i * 42));
+      ctx.fillStyle = '#1d1a17';
+      ctx.font = `600 22px ${FONT}`;
+      ctx.fillText('THE ROTUNDA  →  GALLERIES 1–4', w / 2, h - 50);
+    }
+  });
+}
+function buildPoster(room, ex) {
+  const w = 0.95;
+  const h = w * (912 / 640);
+  const y = clearOfWainscot(room, ex.y ?? 2.1, h + 0.1);
+  const g = new THREE.Group();
+  const frame = new THREE.Mesh(frameGeometry(w + 0.08, h + 0.08, w, h, 0.03), MAT.gilt);
+  frame.position.z = 0.02;
+  const art = new THREE.Mesh(new THREE.PlaneGeometry(w, h), displayMaterial(posterTexture(ex.design), 2));
+  art.position.z = 0.03;
+  const glass = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.05, metalness: 0.9, transparent: true, opacity: 0.08, depthWrite: false }));
+  glass.position.z = 0.045;
+  g.add(frame, art, glass);
+  addWallLighting(g, w + 0.08, h + 0.08, undefined, false);
+  mountOnWall(room, ex, g, y);
+}
+
+// Fire alarm pull station with a horn-strobe above it, as building codes require in every gallery.
+function fireAlarmTexture(kind) {
+  return canvasTexture(128, 160, (ctx, w, h) => {
+    ctx.fillStyle = kind === 'strobe' ? '#f2f2ee' : '#c3201d';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = kind === 'strobe' ? '#c3201d' : '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.font = `bold 34px ${FONT}`;
+    ctx.fillText('FIRE', w / 2, kind === 'strobe' ? h - 22 : 44);
+    if (kind !== 'strobe') {
+      ctx.font = `bold 16px ${FONT}`;
+      ctx.fillText('PULL DOWN', w / 2, h - 18);
+    }
+  });
 }
 
 // ---------------------------------------------------------------- the rotunda
@@ -2635,6 +2808,37 @@ function buildRotunda(room, group) {
   );
   shaft.position.y = topY / 2;
   parent.add(shaft);
+  // dust drifting slowly through the daylight
+  const motes = SMALL_SCREEN ? 140 : 320;
+  const moteHome = new Float32Array(motes * 4);
+  const motePos = new Float32Array(motes * 3);
+  for (let i = 0; i < motes; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const rr = Math.sqrt(Math.random()) * oculusR * 1.15;
+    moteHome.set([Math.cos(a) * rr, Math.random() * (topY - 1), Math.sin(a) * rr, Math.random() * 100], i * 4);
+  }
+  const moteGeo = new THREE.BufferGeometry();
+  moteGeo.setAttribute('position', new THREE.BufferAttribute(motePos, 3));
+  const moteTex = canvasTexture(32, 32, (ctx, w, h) => {
+    const gr = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
+    gr.addColorStop(0, 'rgba(255,245,225,1)');
+    gr.addColorStop(1, 'rgba(255,245,225,0)');
+    ctx.fillStyle = gr;
+    ctx.fillRect(0, 0, w, h);
+  });
+  const dust = new THREE.Points(moteGeo, new THREE.PointsMaterial({ size: 0.09, map: moteTex, transparent: true, opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending }));
+  dust.frustumCulled = false;
+  parent.add(dust);
+  const span = topY - 1;
+  animators.push((t) => {
+    for (let i = 0; i < motes; i++) {
+      const [hx, hy, hz, seed] = moteHome.subarray(i * 4, i * 4 + 4);
+      motePos[i * 3] = hx + Math.sin(t * 0.13 + seed) * 0.35;
+      motePos[i * 3 + 1] = 0.5 + ((hy - t * 0.05 + span) % span);
+      motePos[i * 3 + 2] = hz + Math.cos(t * 0.11 + seed * 1.3) * 0.35;
+    }
+    moteGeo.attributes.position.needsUpdate = true;
+  });
 
   // light: a warm room light plus daylight from the oculus
   const warm = new THREE.PointLight(0xffd9a8, ROOM_LIGHT * 1.7, R * 2.2, 1);
@@ -2739,7 +2943,10 @@ function updateMovement(dt) {
     r = joystick.x;
     speed = WALK_SPEED * 1.4 * Math.min(1, Math.hypot(f, r)); // push further to go faster
   }
-  if (!f && !r) return;
+  if (!f && !r) {
+    camera.position.y += (EYE_HEIGHT - camera.position.y) * Math.min(1, dt * 8); // settle after walking
+    return;
+  }
 
   camera.getWorldDirection(forward);
   forward.y = 0;
@@ -2750,8 +2957,37 @@ function updateMovement(dt) {
 
   // move one axis at a time so the player slides along walls
   const pos = camera.position;
+  const x0 = pos.x;
+  const z0 = pos.z;
   if (!blocked(pos.x + move.x, pos.z)) pos.x += move.x;
   if (!blocked(pos.x, pos.z + move.z)) pos.z += move.z;
+  walk(Math.hypot(pos.x - x0, pos.z - z0));
+}
+
+// A footstep sound every stride, and the faint rise and fall of the head while walking.
+const STRIDE = 0.75;
+const footsteps = new Footsteps();
+let strideLeft = STRIDE / 2;
+let gait = 0;
+function walk(distance) {
+  if (!distance) return;
+  gait += (distance / STRIDE) * Math.PI;
+  camera.position.y = EYE_HEIGHT - 0.012 + Math.abs(Math.sin(gait)) * 0.024;
+  strideLeft -= distance;
+  if (strideLeft <= 0) {
+    strideLeft += STRIDE;
+    if (music.enabled) footsteps.step(surfaceAt(camera.position.x, camera.position.z));
+  }
+}
+function surfaceAt(x, z) {
+  for (const b of rugs) {
+    const dx = x - b.x;
+    const dz = z - b.z;
+    if (Math.abs(dx * b.c - dz * b.s) < b.hw && Math.abs(dx * b.s + dz * b.c) < b.hd) return 'rug';
+  }
+  const room = roomAt(x, z);
+  if (room?.shape === 'octagon') return 'marble';
+  return room?.floor === 'concrete' ? 'concrete' : 'wood';
 }
 
 function inRoom(room, x, z) {
@@ -2795,7 +3031,7 @@ let focused = null;
 // ---- music
 const music = new AmbientMusic(MUSEUM.music);
 function updateMusicButtons() {
-  ui.musicBtn.textContent = music.enabled ? '\u266B Music: on' : '\u266B Music: off';
+  ui.musicBtn.textContent = music.enabled ? '\u266B Sound: on' : '\u266B Sound: off';
   ui.musicHud.classList.toggle('off', !music.enabled);
 }
 function toggleMusic() {
@@ -2805,7 +3041,10 @@ function toggleMusic() {
 updateMusicButtons();
 ui.musicBtn.addEventListener('click', toggleMusic);
 ui.musicHud.addEventListener('click', toggleMusic);
-document.addEventListener('visibilitychange', () => music.setVisible(!document.hidden));
+document.addEventListener('visibilitychange', () => {
+  music.setVisible(!document.hidden);
+  footsteps.setVisible(!document.hidden);
+});
 
 // ---- start / pause screen
 const prefersTouch = window.matchMedia('(pointer: coarse)').matches;
@@ -2860,6 +3099,7 @@ ui.enter.addEventListener('click', () => {
   touchPlaying = false;
   document.body.classList.remove('touch');
   music.start();
+  footsteps.unlock();
   controls.lock();
 });
 
@@ -2871,6 +3111,7 @@ ui.enterTouch.addEventListener('click', () => {
   composer?.setPixelRatio(renderer.getPixelRatio());
   composer?.setSize(window.innerWidth, window.innerHeight);
   music.start();
+  footsteps.unlock();
   ui.overlay.classList.add('hidden');
   // hide the browser bars where possible (Android, iPad); harmless where unsupported
   document.documentElement.requestFullscreen?.().then(() => screen.orientation?.lock?.('landscape')).catch(() => {});

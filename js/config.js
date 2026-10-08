@@ -54,6 +54,8 @@
 //              `plinth: { width, height, inscription }` stands it on a tall marble monument plinth, and
 //              `material: 'marble'` gives a model a marble surface.
 //              `rope: true` puts brass posts and a velvet rope around it.
+//    door      a panelled door that doesn't open, with a brass sign: { type:'door', wall, at, sign }
+//    poster    framed exhibition poster: { type:'poster', wall, at, design: 'micawber' (or leave out) }
 //    case      glass display case on a mahogany cabinet
 //              { type:'case', x, z, rotation, title, subtitle, description, image }
 //
@@ -115,6 +117,9 @@ export const ROOMS = [
       },
       empty('south', -5, { width: 2.2, height: 1.5 }),
       empty('south', 5, { width: 2.2, height: 1.5 }),
+      // doors that don't open, so the building feels lived in
+      { type: 'door', wall: 'west', at: -5.4, sign: 'PRIVATE \u00B7 STAFF ONLY' },
+      { type: 'door', wall: 'east', at: -3.5, sign: 'RESTROOMS' },
     ],
     decor: [
       { type: 'admissions', x: -4.6, z: -3.6 },
@@ -148,7 +153,10 @@ export const ROOMS = [
     x: 0, z: -8.5, w: 5, d: 3, height: 4.5,
     floor: 'wood', floorColor: '#a8774d', accent: '#c9a24a',
     victorian: true, wallpaper: '#5e1a1f', wainscot: true,
-    exhibits: [],
+    exhibits: [
+      { type: 'poster', wall: 'west', at: 0 },
+      { type: 'poster', wall: 'east', at: 0, design: 'micawber' },
+    ],
     decor: [{ type: 'rug', x: 0, z: 0, w: 2.9, d: 1.9, rotation: 90 }],
   },
 
