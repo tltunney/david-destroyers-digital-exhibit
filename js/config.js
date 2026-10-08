@@ -105,7 +105,7 @@ export const ROOMS = [
     id: 'lobby',
     name: 'Lobby',
     x: 0, z: 0, w: 16, d: 14,
-    floor: 'wood', floorColor: '#a8774d', accent: '#a07a4c',
+    floor: 'wood', floorColor: '#8a5a36', accent: '#a07a4c',
     victorian: true, wallpaper: '#2e4a3c', wainscot: true, entrance: 'south',
     doors: { north: [{ at: 0, width: 5 }] },
     exhibits: [
@@ -151,7 +151,7 @@ export const ROOMS = [
     name: 'Rotunda',
     passage: true, // not counted on the map or the number keys
     x: 0, z: -8.5, w: 5, d: 3, height: 4.5,
-    floor: 'wood', floorColor: '#a8774d', accent: '#c9a24a',
+    floor: 'wood', floorColor: '#8a5a36', accent: '#c9a24a',
     victorian: true, wallpaper: '#5e1a1f', wainscot: true,
     exhibits: [
       { type: 'poster', wall: 'west', at: 0 },

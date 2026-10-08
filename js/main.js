@@ -8,7 +8,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { surfaceMaps, TILE_SIZE, SMALL_SCREEN } from './textures.js';
+import { surfaceMaps, surfaceCanvas, TILE_SIZE, SMALL_SCREEN } from './textures.js';
 import { MUSEUM, ROOMS } from './config.js';
 import { AmbientMusic } from './music.js';
 import { Footsteps } from './footsteps.js';
@@ -2531,17 +2531,18 @@ function rotundaFloorTexture(room, R) {
     const octagon = (apothem) => poly(Array.from({ length: 8 }, (_, k) => at(22.5 + k * 45, apothem / Math.cos(Math.PI / 8))));
     ctx.fillStyle = '#e6dfd0';
     ctx.fillRect(0, 0, S, S);
-    // veins
+    // each cut slab of stone is a slightly different shade
     const r = seededRandom('rotunda-floor');
-    for (let i = 0; i < 140; i++) {
-      ctx.strokeStyle = `rgba(110,100,85,${0.05 + r() * 0.1})`;
-      ctx.lineWidth = 1 + r() * 2.5;
-      ctx.beginPath();
-      const x = r() * S;
-      const y = r() * S;
-      ctx.moveTo(x, y);
-      ctx.bezierCurveTo(x + (r() - 0.5) * 300, y + (r() - 0.5) * 300, x + (r() - 0.5) * 400, y + (r() - 0.5) * 400, x + (r() - 0.5) * 500, y + (r() - 0.5) * 500);
-      ctx.stroke();
+    for (let rr = 6.5; rr < R; rr += 1.6) {
+      for (let deg = 0; deg < 360; deg += 15) {
+        const a0 = THREE.MathUtils.degToRad(deg - 90);
+        const a1 = THREE.MathUtils.degToRad(deg + 15 - 90);
+        ctx.beginPath();
+        ctx.arc(c, c, (rr + 1.6) * ppm, a0, a1);
+        ctx.arc(c, c, rr * ppm, a1, a0, true);
+        ctx.fillStyle = r() > 0.5 ? `rgba(255,252,244,${r() * 0.25})` : `rgba(120,105,85,${r() * 0.08})`;
+        ctx.fill();
+      }
     }
     // stone joints: rings and spokes
     ctx.strokeStyle = 'rgba(90,80,65,0.28)';
@@ -2593,6 +2594,14 @@ function rotundaFloorTexture(room, R) {
     ctx.strokeStyle = '#8a3b2a';
     ctx.lineWidth = ppm * 0.06;
     ctx.stroke();
+    // real marble veining through everything, laid in 1.6 m slabs
+    const veins = surfaceCanvas('marble', '#ffffff');
+    const pattern = ctx.createPattern(veins, 'repeat');
+    pattern.setTransform?.(new DOMMatrix().scale((ppm * 1.6) / veins.width));
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.fillStyle = pattern;
+    ctx.fillRect(0, 0, S, S);
+    ctx.globalCompositeOperation = 'source-over';
   });
 }
 

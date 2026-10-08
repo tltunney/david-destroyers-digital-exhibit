@@ -207,21 +207,52 @@ function slats(color) {
   }, 4);
 }
 
-// Honed white marble with soft grey veins, for the bust.
+// Polished white marble, Carrara-like: a soft cloudy ground with grey veins that wander, fork and fade,
+// made by bending a pattern of lines with layered noise (the way the stone itself formed).
+// The vein pattern is worked out once and shared by every marble color.
+let marbleField = null;
+function marblePattern(size) {
+  if (marbleField) return marbleField;
+  const warpA = fractal(111, 3, 3, 4);
+  const warpB = fractal(113, 3, 3, 4);
+  const cloud = fractal(117, 2, 2, 3);
+  const fine = fractal(121, 40, 40, 2);
+  const shade = new Float32Array(size * size);
+  const veins = new Float32Array(size * size);
+  const glossy = new Float32Array(size * size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const u = x / size;
+      const v = y / size;
+      const a = warpA(u, v);
+      const b = warpB(u, v);
+      const f = fine(u, v);
+      const cl = cloud(u, v);
+      // main veins run diagonally, bent twice by the noise
+      const main = Math.abs(Math.sin(Math.PI * ((u + v) * 2 + a * 2.6 + b * 1.4)));
+      const vein = Math.pow(1 - main, 30) * (0.45 + b * 0.8); // thin, stronger in places, fading in others
+      const halo = Math.pow(1 - main, 6) * 0.35; // the soft grey bleed around each vein
+      // finer cross veins
+      const cross = Math.abs(Math.sin(Math.PI * ((u * 3 - v * 2) * 2 + a * 4 + f * 1.5)));
+      const thread = Math.pow(1 - cross, 60) * 0.5;
+      const i = y * size + x;
+      shade[i] = 1 - Math.min(0.5, vein * 0.42 + halo * 0.07 + thread * 0.22) - (cl - 0.5) * 0.07 + (f - 0.5) * 0.02;
+      veins[i] = vein + halo;
+      glossy[i] = 0.12 + vein * 0.14 + cl * 0.06;
+    }
+  }
+  marbleField = { size, shade, veins, glossy };
+  return marbleField;
+}
 function marble(color) {
-  const size = SMALL ? 256 : 512;
+  const { size, shade, veins, glossy } = marblePattern(SMALL ? 256 : 512);
   const base = rgb(color);
-  const turb = fractal(111, 4, 4, 5);
-  const fine = fractal(121, 32, 32, 2);
-  return surface(size, size, (u, v) => {
-    const t = turb(u, v);
-    const vein = Math.pow(1 - Math.abs(Math.sin(Math.PI * 2 * (u + v) + t * 9)), 14);
-    const vein2 = Math.pow(1 - Math.abs(Math.sin(Math.PI * 2 * (u * 2 - v) + t * 6)), 30);
-    const k = 1 - vein * 0.1 - vein2 * 0.05 + (fine(u, v) - 0.5) * 0.025;
-    const c = tint(base, k);
-    c[2] = clamp255(c[2] + vein * 6); // veins lean slightly cool
-    return [...c, 0.5, 0.24 + vein * 0.1];
-  }, 0.6);
+  return surface(size, size, (u, v, x, y) => {
+    const i = y * size + x;
+    const c = tint(base, shade[i]);
+    c[2] = clamp255(c[2] + veins[i] * 8); // grey veins lean cool against warm white
+    return [...c, 0.5 - veins[i] * 0.08, glossy[i]];
+  }, 0.5);
 }
 
 // Pebbled leather for bench cushions. One tile = 0.5 m.
@@ -312,11 +343,62 @@ function tufted(color) {
 }
 
 const GENERATORS = { wood: woodFloor, concrete, plaster, slats, marble, leather, damask, wainscot, tufted };
+
+// Photographed surfaces (assets/textures). The photo has one natural color; each room's color is
+// reached by tinting it, so `avg` is the photo's average color. Phones load half-size copies.
+const PHOTOS = {
+  wood: { name: 'hardwood2', maps: { map: 'diffuse', bumpMap: 'bump', roughnessMap: 'roughness' }, avg: [217, 172, 122], bumpScale: 3 },
+};
+const loader = new THREE.TextureLoader();
+const photoCache = new Map();
+function photoSet(kind) {
+  if (photoCache.has(kind)) return photoCache.get(kind);
+  const photo = PHOTOS[kind];
+  const set = { textures: {}, waiting: [] };
+  for (const [slot, file] of Object.entries(photo.maps)) {
+    const url = `assets/textures/${photo.name}_${file}${SMALL ? '_s' : ''}.jpg`;
+    const tex = loader.load(url, () => {
+      // copies handed out before the photo arrived get it now
+      for (const w of set.waiting) {
+        if (w.slot !== slot) continue;
+        w.copy.source = tex.source;
+        w.copy.needsUpdate = true;
+      }
+    }, undefined, () => console.warn(`Could not load ${url}; the floor will look plain.`));
+    set.textures[slot] = tex;
+  }
+  photoCache.set(kind, set);
+  return set;
+}
+function photoMaps(kind, color, repeatX, repeatY) {
+  const photo = PHOTOS[kind];
+  const set = photoSet(kind);
+  const out = {};
+  for (const [slot, tex] of Object.entries(set.textures)) {
+    const copy = new THREE.Texture();
+    copy.wrapS = copy.wrapT = THREE.RepeatWrapping;
+    copy.anisotropy = 8;
+    if (slot === 'map') copy.colorSpace = THREE.SRGBColorSpace;
+    copy.repeat.set(repeatX, repeatY);
+    if (tex.image) {
+      copy.source = tex.source;
+      copy.needsUpdate = true;
+    } else set.waiting.push({ slot, copy });
+    out[slot] = copy;
+  }
+  const target = rgb(color);
+  out.color = new THREE.Color().setRGB(...target.map((c, i) => Math.min(1, c / photo.avg[i])), THREE.SRGBColorSpace);
+  out.bumpScale = photo.bumpScale;
+  return out;
+}
+
 const cache = new Map();
 
-// Returns { map, normalMap, roughnessMap } for a surface type and color.
+// Returns { map, normalMap, roughnessMap } for a surface type and color (photographed surfaces also
+// return a tint color and use a bump map instead of a normal map).
 // The textures are generated once and cached; the copies returned can each get their own repeat.
 export function surfaceMaps(kind, color, repeatX = 1, repeatY = 1) {
+  if (PHOTOS[kind]) return photoMaps(kind, color, repeatX, repeatY);
   const key = `${kind}:${color}`;
   if (!cache.has(key)) cache.set(key, (GENERATORS[kind] ?? plaster)(color));
   const set = cache.get(key);
@@ -331,8 +413,19 @@ export function surfaceMaps(kind, color, repeatX = 1, repeatY = 1) {
 
 // How big one texture tile is in meters, so surfaces line up with real-world scale.
 export const TILE_SIZE = {
-  wood: [2, 2], concrete: [4, 4], plaster: [2, 2], slats: [1, 2.5], marble: [1, 1], leather: [0.5, 0.5],
+  wood: [2.24, 1.12], concrete: [4, 4], plaster: [2, 2], slats: [1, 2.5], marble: [1, 1], leather: [0.5, 0.5],
   damask: [0.7, 0.7], wainscot: [1, 1.1], tufted: [0.5, 0.5],
 };
 
 export const SMALL_SCREEN = SMALL;
+
+// A generated surface's color as a canvas (to paint it into other textures, like the rotunda floor).
+export function surfaceCanvas(kind, color) {
+  const { map } = surfaceMaps(kind, color);
+  const { data, width, height } = map.image;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  canvas.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(data), width, height), 0, 0);
+  return canvas;
+}
