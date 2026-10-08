@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b0b0b">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 fill=%22%230b0b0b%22/%3E%3Ctext x=%2232%22 y=%2246%22 font-family=%22Impact%22 font-size=%2236%22 fill=%22%23ff3b1f%22 text-anchor=%22middle%22%3EA%3C/text%3E%3C/svg%3E">
+  <title>Shop All — AGO</title>
+  <meta name="description" content="Shop every AGO piece: heavyweight hoodies, boxy tees, cargos and headwear.">
+</head>
+<body data-page="shop">
+<main id="main" class="shop">
+  <div class="shop-head">
+    <h1 id="shop-title">Shop All</h1>
+    <span class="muted" id="result-count"></span>
+  </div>
+  <div class="filters">
+    <div class="chips" id="cat-chips" role="group" aria-label="Category"></div>
+    <div class="filter-right">
+      <label class="check"><input type="checkbox" id="stock-filter"> In stock only</label>
+      <label class="sel"><span class="sr">Size</span>
+        <select id="size-filter">
+          <option value="all">All sizes</option>
+          <option>S</option><option>M</option><option>L</option><option>XL</option><option>XXL</option>
+        </select>
+      </label>
+      <label class="sel"><span class="sr">Sort</span>
+        <select id="sort">
+          <option value="featured">Featured</option>
+          <option value="new">Newest</option>
+          <option value="low">Price: low to high</option>
+          <option value="high">Price: high to low</option>
+        </select>
+      </label>
+    </div>
+  </div>
+  <div class="grid" id="shop-grid"></div>
+</main>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
