@@ -126,7 +126,7 @@ export const ROOMS = [
       { type: 'monstera', x: 3.6, z: -6.2 },
       { type: 'monstera', x: 7.1, z: 6.1 },
       { type: 'coatstand', x: -7.2, z: 5.6 },
-      { type: 'guide', x: 2.6, z: 4.4, rotation: -20 },
+      { type: 'guide', x: 2.3, z: 0.5, rotation: -25 }, // just past the rug, facing the way in
       { type: 'donations', x: 6.9, z: 3 },
       { type: 'settee', x: -4.5, z: 3.5, rotation: 90 },
       { type: 'settee', x: 4.5, z: 3.5, rotation: 90 },
