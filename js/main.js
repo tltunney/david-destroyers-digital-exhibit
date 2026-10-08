@@ -11,7 +11,6 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { surfaceMaps, surfaceCanvas, TILE_SIZE, SMALL_SCREEN } from './textures.js';
 import { MUSEUM, ROOMS } from './config.js';
 import { AmbientMusic } from './music.js';
-import { Footsteps } from './footsteps.js';
 
 // ---------------------------------------------------------------- constants
 const WALL_THICKNESS = 0.4;
@@ -65,7 +64,6 @@ const interactables = []; // meshes with userData.exhibit
 const blockers = [];      // walls, so exhibits can't be clicked through them
 const spinners = [];      // objects that slowly rotate
 const animators = [];     // functions called every frame with the time in seconds
-const rugs = [];          // where the rugs lie (world space), for the sound of footsteps
 
 for (const room of ROOMS) {
   room.height ??= DEFAULT_HEIGHT;
@@ -2224,10 +2222,6 @@ function buildRug(room, item) {
   rug.position.set(room.x + (item.x ?? 0), 0.006, room.z + (item.z ?? 0));
   rug.rotation.y = THREE.MathUtils.degToRad(item.rotation ?? 0);
   rug.receiveShadow = true;
-  // remember where it lies, so footsteps go quiet on it
-  const center = toWorld(rug.position.x, rug.position.z);
-  const turn = frame.rot + rug.rotation.y;
-  rugs.push({ x: center.x, z: center.z, hw: w / 2, hd: d / 2, c: Math.cos(turn), s: Math.sin(turn) });
   // fringe along the two short ends
   const fringeTex = canvasTexture(256, 32, (ctx, cw, ch) => {
     for (let x = 0; x < cw; x += 3) {
@@ -2973,30 +2967,13 @@ function updateMovement(dt) {
   walk(Math.hypot(pos.x - x0, pos.z - z0));
 }
 
-// A footstep sound every stride, and the faint rise and fall of the head while walking.
+// The faint rise and fall of the head while walking.
 const STRIDE = 0.75;
-const footsteps = new Footsteps();
-let strideLeft = STRIDE / 2;
 let gait = 0;
 function walk(distance) {
   if (!distance) return;
   gait += (distance / STRIDE) * Math.PI;
   camera.position.y = EYE_HEIGHT - 0.012 + Math.abs(Math.sin(gait)) * 0.024;
-  strideLeft -= distance;
-  if (strideLeft <= 0) {
-    strideLeft += STRIDE;
-    if (music.enabled) footsteps.step(surfaceAt(camera.position.x, camera.position.z));
-  }
-}
-function surfaceAt(x, z) {
-  for (const b of rugs) {
-    const dx = x - b.x;
-    const dz = z - b.z;
-    if (Math.abs(dx * b.c - dz * b.s) < b.hw && Math.abs(dx * b.s + dz * b.c) < b.hd) return 'rug';
-  }
-  const room = roomAt(x, z);
-  if (room?.shape === 'octagon') return 'marble';
-  return room?.floor === 'concrete' ? 'concrete' : 'wood';
 }
 
 function inRoom(room, x, z) {
@@ -3040,7 +3017,7 @@ let focused = null;
 // ---- music
 const music = new AmbientMusic(MUSEUM.music);
 function updateMusicButtons() {
-  ui.musicBtn.textContent = music.enabled ? '\u266B Sound: on' : '\u266B Sound: off';
+  ui.musicBtn.textContent = music.enabled ? '\u266B Music: on' : '\u266B Music: off';
   ui.musicHud.classList.toggle('off', !music.enabled);
 }
 function toggleMusic() {
@@ -3050,10 +3027,7 @@ function toggleMusic() {
 updateMusicButtons();
 ui.musicBtn.addEventListener('click', toggleMusic);
 ui.musicHud.addEventListener('click', toggleMusic);
-document.addEventListener('visibilitychange', () => {
-  music.setVisible(!document.hidden);
-  footsteps.setVisible(!document.hidden);
-});
+document.addEventListener('visibilitychange', () => music.setVisible(!document.hidden));
 
 // ---- start / pause screen
 const prefersTouch = window.matchMedia('(pointer: coarse)').matches;
@@ -3108,7 +3082,6 @@ ui.enter.addEventListener('click', () => {
   touchPlaying = false;
   document.body.classList.remove('touch');
   music.start();
-  footsteps.unlock();
   controls.lock();
 });
 
@@ -3120,7 +3093,6 @@ ui.enterTouch.addEventListener('click', () => {
   composer?.setPixelRatio(renderer.getPixelRatio());
   composer?.setSize(window.innerWidth, window.innerHeight);
   music.start();
-  footsteps.unlock();
   ui.overlay.classList.add('hidden');
   // hide the browser bars where possible (Android, iPad); harmless where unsupported
   document.documentElement.requestFullscreen?.().then(() => screen.orientation?.lock?.('landscape')).catch(() => {});
