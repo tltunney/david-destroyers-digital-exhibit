@@ -46,6 +46,7 @@ Three.js is included in `lib/three/`, so the museum works with no internet conne
 | 1–6 | Jump to a room (numbers match the minimap: 1 Lobby, 2 Rotunda, 3–6 Galleries 1–4) |
 | M | Show or hide the minimap |
 | N | Music on/off |
+| Space | Jump (phones and tablets have a Jump button) |
 | Esc | Pause |
 
 **Phone or tablet:** tap **Enter on phone / tablet**. Use the left thumb stick to walk, drag anywhere else to look,
@@ -75,6 +76,37 @@ To play your own royalty-free track instead, set `music.file` in `js/config.js`.
   Pedestals also take `spin`, `facing`, and `spotlight`.
 
 Remember to cite your image sources in each exhibit's description.
+
+## Admin mode (edit exhibits from inside the museum)
+
+Open the menu (Esc, or ☰ on a phone) and choose **🔒 Admin mode**. In admin mode, clicking or tapping a
+painting, wall panel, case or plinth opens an editor for its title, subtitle, text and photo. **Apply**
+shows the change right away; **Publish** (red bar at the top) saves every change for all visitors.
+GitHub Pages republishes the site in about a minute.
+
+**First-time setup (once for the whole team):**
+
+1. On GitHub: **Settings → Developer settings → Personal access tokens → Fine-grained tokens →
+   Generate new token**.
+2. **Repository access:** *Only select repositories* → this repository.
+3. **Permissions → Repository permissions → Contents:** *Read and write*. Give it an expiration date
+   after the class ends.
+4. In the museum, choose **Admin mode**, paste the token, and choose a team password (10+ characters;
+   a few random words work well).
+
+The token is saved in `content/admin.json`, encrypted with the team password, so teammates only need
+the password. Anyone with the password can change the exhibits. To change the password or swap the
+token, use *Set up admin mode again* in the password box.
+
+Edits are stored in `content/exhibits.json` (one entry per exhibit) and photos in `content/images/`.
+They are laid over `js/config.js` when the museum loads, so they win over what config.js says.
+Each exhibit's entry is named after where it hangs, e.g. `price/painting/north/0`.
+
+## Always the newest version
+
+`index.html` fetches `version.json` fresh and adds its number to every script it loads, so a browser
+never runs an old cached copy. **Change the version in `version.json` whenever the code changes.**
+If the museum is updated while someone has it open, a banner offers them a reload.
 
 ## Publishing (GitHub Pages)
 
