@@ -75,6 +75,9 @@ export const MUSEUM = {
   // Ambient music is generated in the browser. To use your own royalty-free track instead,
   // put it in assets/audio/ and set file: 'assets/audio/your-track.mp3'.
   music: { enabled: true, volume: 0.3, file: '' },
+  // Admin mode (settings menu) saves edited text and photos to this GitHub repository and branch,
+  // which republishes the site. See "Admin mode" in README.md.
+  admin: { repo: 'tltunney/david-destroyers-digital-exhibit', branch: 'main' },
 };
 
 // The passage text on the wall panels is hidden while the team finalizes the wording.

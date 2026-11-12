@@ -5,15 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>David Destroyers Digital Exhibit</title>
   <link rel="icon" href="data:," />
-  <link rel="stylesheet" href="css/style.css" />
-  <script type="importmap">
-    {
-      "imports": {
-        "three": "./lib/three/build/three.module.js",
-        "three/addons/": "./lib/three/examples/jsm/"
-      }
-    }
-  </script>
+  <link rel="stylesheet" href="css/style.css?v=3" />
 </head>
 <body>
   <div id="app"></div>
@@ -32,6 +24,8 @@
     <button id="menu-hud" class="hud-btn" aria-label="Pause menu">&#9776;</button>
   </div>
   <div id="joystick"><div id="joystick-knob"></div></div>
+  <button id="jump-btn" aria-label="Jump">Jump</button>
+  <div id="update-banner" class="hidden">The museum has just been updated. <button id="update-reload">Reload</button></div>
 
   <!-- Start / pause screen -->
   <div id="overlay">
@@ -45,12 +39,13 @@
       <div class="settings">
         <button id="music-btn" class="text-btn"></button>
         <button id="quality-btn" class="text-btn"></button>
+        <button id="admin-btn" class="text-btn">&#128274; Admin mode</button>
       </div>
       <h3>Mouse &amp; keyboard</h3>
       <ul class="controls">
         <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk</li>
         <li><kbd>Mouse</kbd> look around</li>
-        <li><kbd>Shift</kbd> walk faster</li>
+        <li><kbd>Shift</kbd> walk faster &nbsp;<kbd>Space</kbd> jump</li>
         <li><kbd>E</kbd> or <kbd>Click</kbd> view an exhibit</li>
         <li><kbd>1</kbd>–<kbd>9</kbd> jump to a room</li>
         <li><kbd>M</kbd> map &nbsp;<kbd>N</kbd> music</li>
@@ -60,6 +55,7 @@
       <ul class="controls">
         <li>Left thumb stick: walk</li>
         <li>Drag anywhere else: look around</li>
+        <li>Jump button: jump</li>
         <li>Tap an exhibit: view it</li>
         <li>Turn your phone sideways for the best view</li>
       </ul>
@@ -81,6 +77,32 @@
     </div>
   </div>
 
-  <script type="module" src="js/main.js"></script>
+  <!--
+    Always run the newest code: version.json is fetched fresh, and its number is added to every
+    one of our script files, so a browser can never mix in an old cached copy. Bump version.json
+    whenever the code changes.
+  -->
+  <script>
+    (async () => {
+      let version = Date.now().toString(36);
+      try {
+        const res = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+        if (res.ok) version = (await res.json()).version;
+      } catch {}
+      window.MUSEUM_VERSION = version;
+      const imports = { three: './lib/three/build/three.module.js', 'three/addons/': './lib/three/examples/jsm/' };
+      for (const name of ['main', 'config', 'textures', 'music', 'admin']) {
+        imports[new URL('js/' + name + '.js', location.href).href] = './js/' + name + '.js?v=' + version;
+      }
+      const map = document.createElement('script');
+      map.type = 'importmap';
+      map.textContent = JSON.stringify({ imports });
+      document.head.append(map);
+      const main = document.createElement('script');
+      main.type = 'module';
+      main.src = 'js/main.js?v=' + version;
+      document.body.append(main);
+    })();
+  </script>
 </body>
 </html>

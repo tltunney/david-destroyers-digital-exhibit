@@ -229,10 +229,10 @@ kbd {
 #app canvas { touch-action: none; }
 .card { touch-action: pan-y; }
 
-#hud-buttons, #joystick, .touch-only { display: none; }
+#hud-buttons, #joystick, #jump-btn, .touch-only { display: none; }
 body.touch .touch-only { display: inline; }
 body.touch .desktop-only { display: none; }
-body.touch #hud-buttons, body.touch #joystick { display: flex; }
+body.touch #hud-buttons, body.touch #joystick, body.touch #jump-btn { display: flex; }
 
 #hud-buttons {
   position: fixed;
@@ -272,6 +272,53 @@ body.touch #hud-buttons, body.touch #joystick { display: flex; }
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.8);
   pointer-events: none;
+}
+
+#jump-btn {
+  position: fixed;
+  right: max(28px, env(safe-area-inset-right));
+  bottom: max(40px, env(safe-area-inset-bottom));
+  width: 84px;
+  height: 84px;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.3);
+  color: #fff;
+  font: inherit;
+  font-weight: bold;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+#jump-btn:active { background: rgba(255, 255, 255, 0.3); }
+/* the jump button takes the bottom-right corner on phones, so the map moves up under the buttons */
+body.touch #minimap { bottom: auto; top: calc(max(12px, env(safe-area-inset-top)) + 56px); }
+
+#update-banner {
+  position: fixed;
+  left: 50%;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 50;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: rgba(20, 20, 26, 0.95);
+  color: var(--text);
+  font-size: 0.9rem;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+#update-banner button {
+  margin-left: 8px;
+  padding: 4px 12px;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #111;
+  font: inherit;
+  font-weight: bold;
+  cursor: pointer;
 }
 
 /* the "Tap to view" prompt is a button in touch mode */

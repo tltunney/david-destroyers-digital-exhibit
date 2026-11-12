@@ -11,6 +11,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { surfaceMaps, surfaceCanvas, TILE_SIZE, SMALL_SCREEN } from './textures.js';
 import { MUSEUM, ROOMS } from './config.js';
 import { AmbientMusic } from './music.js';
+import { Admin } from './admin.js';
 
 // ---------------------------------------------------------------- constants
 const WALL_THICKNESS = 0.4;
@@ -64,6 +65,25 @@ const interactables = []; // meshes with userData.exhibit
 const blockers = [];      // walls, so exhibits can't be clicked through them
 const spinners = [];      // objects that slowly rotate
 const animators = [];     // functions called every frame with the time in seconds
+
+// Text and photos added in admin mode live in content/exhibits.json, keyed by exhibit id, and are
+// laid over what config.js says. It's fetched fresh every time so edits show up right away.
+const exhibitContent = await fetch(`content/exhibits.json?t=${Date.now()}`, { cache: 'no-store' })
+  .then((r) => (r.ok ? r.json() : {}))
+  .catch(() => ({}));
+// A stable name for each exhibit from where it is (so reordering config.js doesn't mix them up),
+// e.g. "price/painting/west/-4", "rotunda/panel/face0/0", "price/pedestal/floor/-2,-3.5".
+function exhibitId(room, ex) {
+  const onWall = ex.wall || ex.face !== undefined;
+  const where = ex.wall ?? (ex.face !== undefined ? `face${ex.face}` : 'floor');
+  return `${room.id}/${ex.type}/${where}/${onWall ? ex.at ?? 0 : `${ex.x ?? 0},${ex.z ?? 0}`}`;
+}
+for (const room of ROOMS) {
+  for (const ex of room.exhibits ?? []) {
+    ex.id ??= exhibitId(room, ex);
+    Object.assign(ex, exhibitContent[ex.id]);
+  }
+}
 
 for (const room of ROOMS) {
   room.height ??= DEFAULT_HEIGHT;
@@ -472,18 +492,31 @@ function artTexture(title, accent) {
 }
 
 // Wall text. Wider panels get a sharper canvas, and the body font shrinks until the text fits.
-function textPanelTexture(title, text, widthMeters, aspect, accent) {
+function textPanelTexture(title, text, widthMeters, aspect, accent, photo = null) {
   const W = Math.round(THREE.MathUtils.clamp((1024 * widthMeters) / 3, 1024, 2048));
   const H = Math.round(W / aspect);
   const k = W / 1024;
+  // with a photo, it takes the right part of the panel and the words wrap in the rest
+  const textW = photo ? W * 0.56 : W;
   return canvasTexture(W, H, (ctx) => {
-    ctx.fillStyle = '#27231f';
-    ctx.fillRect(0, 0, W, H);
+    if (photo) {
+      const box = { x: textW, y: 48 * k, w: W - textW - 48 * k, h: H - 96 * k };
+      const s = Math.min(box.w / photo.naturalWidth, box.h / photo.naturalHeight);
+      const dw = photo.naturalWidth * s;
+      const dh = photo.naturalHeight * s;
+      ctx.fillStyle = '#27231f';
+      ctx.fillRect(0, 0, W, H);
+      ctx.drawImage(photo, box.x + (box.w - dw) / 2, box.y + (box.h - dh) / 2, dw, dh);
+    }
+    if (!photo) {
+      ctx.fillStyle = '#27231f';
+      ctx.fillRect(0, 0, W, H);
+    }
     ctx.fillStyle = accent;
     ctx.fillRect(48 * k, 48 * k, 10 * k, H - 96 * k);
     ctx.fillStyle = '#f4efe6';
     ctx.font = `bold ${64 * k}px ${FONT}`;
-    ctx.fillText(title, 90 * k, 116 * k, W - 140 * k);
+    ctx.fillText(title, 90 * k, 116 * k, textW - 140 * k);
 
     const top = 186 * k;
     const bottom = H - 56 * k;
@@ -491,7 +524,7 @@ function textPanelTexture(title, text, widthMeters, aspect, accent) {
     let lines;
     for (; size > 14 * k; size -= 2 * k) {
       ctx.font = `${size}px ${FONT}`;
-      lines = wrapText(ctx, text ?? '', W - 160 * k);
+      lines = wrapText(ctx, text ?? '', textW - 160 * k);
       if (lines.length * size * 1.4 <= bottom - top + size) break;
     }
     ctx.fillStyle = '#d6cfc2';
@@ -555,6 +588,35 @@ function displayMaterial(map, layer = 0) {
     map, emissiveMap: map, emissive: 0xffffff, emissiveIntensity: 0.45, roughness: 0.85,
     polygonOffset: layer > 0, polygonOffsetFactor: -layer, polygonOffsetUnits: -layer,
   });
+}
+
+// Swaps the picture shown by a display material.
+function setMap(material, tex) {
+  if (material.map && material.map !== tex) material.map.dispose();
+  material.map = tex;
+  material.emissiveMap = tex;
+  material.needsUpdate = true;
+}
+
+// Fits a photo inside a frame of the given shape without stretching it; any spare space is `bg`.
+function fitPhoto(url, aspect, bg, onReady) {
+  const img = new Image();
+  img.onload = () => {
+    const W = aspect >= 1 ? 1536 : Math.round(1536 * aspect);
+    const H = Math.round(W / aspect);
+    onReady(
+      canvasTexture(W, H, (ctx) => {
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, W, H);
+        const k = Math.min(W / img.naturalWidth, H / img.naturalHeight);
+        const dw = img.naturalWidth * k;
+        const dh = img.naturalHeight * k;
+        ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
+      }),
+    );
+  };
+  img.onerror = () => console.warn(`Could not load image "${url}".`);
+  img.src = url;
 }
 
 function loadImage(url, material) {
@@ -948,8 +1010,7 @@ function buildPainting(room, ex) {
   frame.castShadow = true;
   const mat = new THREE.Mesh(new THREE.PlaneGeometry(w + 0.3, h + 0.3), MAT.passepartout);
   mat.position.z = 0.05;
-  const artMat = displayMaterial(ex.title || ex.image ? artTexture(ex.title || 'untitled', room.accent ?? '#888') : emptySlotTexture(), 2);
-  if (ex.image) loadImage(ex.image, artMat);
+  const artMat = displayMaterial(emptySlotTexture(), 2);
   const art = new THREE.Mesh(new THREE.PlaneGeometry(w, h), artMat);
   art.position.z = 0.062;
 
@@ -957,8 +1018,15 @@ function buildPainting(room, ex) {
   label.position.set(w / 2 + 0.75, -h / 2 + 0.14, 0.03);
   if (w / 2 + 1.1 > 3) label.position.set(0, -h / 2 - 0.4, 0.03); // big paintings: label underneath
 
-  group.add(frame, mat, art);
-  if (ex.title) group.add(label);
+  group.add(frame, mat, art, label);
+  // draws the art and label from the exhibit's current title, subtitle and photo (again after an edit)
+  ex.refresh = () => {
+    if (ex.image) fitPhoto(ex.image, w / h, '#f6f3ec', (tex) => setMap(artMat, tex));
+    else setMap(artMat, ex.title ? artTexture(ex.title, room.accent ?? '#888') : emptySlotTexture());
+    setMap(label.material, labelTexture(ex.title ?? '', ex.subtitle || undefined));
+    label.visible = !!ex.title;
+  };
+  ex.refresh();
   if (room.victorian) {
     // two brass cords from hooks on the picture rail to the top corners of the frame
     const railY = room.height - PICTURE_RAIL_DROP - y;
@@ -994,7 +1062,19 @@ function buildPanel(room, ex) {
   if (room.victorian && ex.sconces !== false) {
     for (const sgn of [-1, 1]) addSconce(room, ex.wall, (ex.at ?? 0) + sgn * (w / 2 + 0.6), Math.max(2.4, y + 0.4));
   }
-  makeInteractive([panel], { ...ex, description: ex.description || ex.text || 'Text coming soon.' }, room);
+  const info = { ...ex, description: ex.description || ex.text || 'Text coming soon.' };
+  info.refresh = () => {
+    info.description = info.text || 'Text coming soon.';
+    const draw = (img) => setMap(panel.material[4], textPanelTexture(info.title ?? '', info.text, w, w / h, room.accent ?? '#d9a441', img));
+    draw(null);
+    if (info.image) {
+      const img = new Image();
+      img.onload = () => draw(img);
+      img.src = info.image;
+    }
+  };
+  if (info.image) info.refresh();
+  makeInteractive([panel], info, room);
 }
 
 // ---------------------------------------------------------------- the bust
@@ -1743,10 +1823,22 @@ function buildCase(room, ex) {
   glass.renderOrder = 1;
   for (const [cx, cz] of [[-0.73, -0.36], [0.73, -0.36], [-0.73, 0.36], [0.73, 0.36]]) piece(g, new THREE.BoxGeometry(0.03, 0.56, 0.03), MAT.gilt, cx, 1.18, cz);
   piece(g, new THREE.BoxGeometry(1.5, 0.04, 0.76), MAT.mahogany, 0, 1.48, 0);
-  if (ex.title) {
-    // a placeholder object until an image or model is chosen
-    piece(g, new THREE.BoxGeometry(0.5, 0.04, 0.36), MAT.bookCover, 0, 0.94, 0).rotation.y = 0.3;
-  }
+  // a placeholder book until a photo is chosen, then the photo on a little stand
+  const book = piece(g, new THREE.BoxGeometry(0.5, 0.04, 0.36), MAT.bookCover, 0, 0.94, 0);
+  book.rotation.y = 0.3;
+  const card = new THREE.Group();
+  card.position.set(0, 0.92, -0.04);
+  card.rotation.x = -0.3;
+  piece(card, new THREE.BoxGeometry(0.66, 0.48, 0.02), MAT.mahogany, 0, 0.24, -0.012);
+  const cardMat = displayMaterial(emptySlotTexture(), 1);
+  piece(card, new THREE.PlaneGeometry(0.6, 0.42), cardMat, 0, 0.24, 0.0);
+  g.add(card);
+  ex.refresh = () => {
+    book.visible = !!ex.title && !ex.image;
+    card.visible = !!ex.image;
+    if (ex.image) fitPhoto(ex.image, 0.6 / 0.42, '#1d1a17', (tex) => setMap(cardMat, tex));
+  };
+  ex.refresh();
   g.traverse((m) => {
     if (m.isMesh && m.material !== MAT.caseGlass) m.castShadow = m.receiveShadow = true;
   });
@@ -2936,8 +3028,24 @@ let panelOpen = false;
 const joystick = { x: 0, y: 0 }; // -1..1, pushing up is y = -1
 const isPlaying = () => (mode === 'touch' ? touchPlaying && !panelOpen : controls.isLocked);
 
+// Jumping: a simple hop with gravity, about half a meter off the floor.
+const GRAVITY = 18;
+const JUMP_SPEED = 4.4;
+let jumpY = 0;
+let jumpV = 0;
+let bobY = 0;
+function jump() {
+  if (isPlaying() && jumpY === 0 && jumpV === 0) jumpV = JUMP_SPEED;
+}
+
 function updateMovement(dt) {
   if (!isPlaying()) return;
+  if (jumpV !== 0 || jumpY > 0) {
+    jumpV -= GRAVITY * dt;
+    jumpY += jumpV * dt;
+    if (jumpY <= 0) jumpY = jumpV = 0;
+  }
+  camera.position.y = EYE_HEIGHT + bobY + jumpY;
   let f = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
   let r = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
   let speed = keys.has('ShiftLeft') || keys.has('ShiftRight') ? RUN_SPEED : WALK_SPEED;
@@ -2947,7 +3055,7 @@ function updateMovement(dt) {
     speed = WALK_SPEED * 1.4 * Math.min(1, Math.hypot(f, r)); // push further to go faster
   }
   if (!f && !r) {
-    camera.position.y += (EYE_HEIGHT - camera.position.y) * Math.min(1, dt * 8); // settle after walking
+    bobY *= Math.max(0, 1 - dt * 8); // settle after walking
     return;
   }
 
@@ -2971,9 +3079,9 @@ function updateMovement(dt) {
 const STRIDE = 0.75;
 let gait = 0;
 function walk(distance) {
-  if (!distance) return;
+  if (!distance || jumpY > 0) return;
   gait += (distance / STRIDE) * Math.PI;
-  camera.position.y = EYE_HEIGHT - 0.012 + Math.abs(Math.sin(gait)) * 0.024;
+  bobY = -0.012 + Math.abs(Math.sin(gait)) * 0.024;
 }
 
 function inRoom(room, x, z) {
@@ -3112,8 +3220,39 @@ $('menu-hud').addEventListener('click', () => {
   showMenu();
 });
 $('map-hud').addEventListener('click', () => ui.minimap.classList.toggle('hidden'));
+$('jump-btn').addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  jump();
+});
+
+// index.html always starts the newest code. If the museum is updated while this page stays open,
+// offer a reload instead of leaving someone on an old version.
+setInterval(async () => {
+  try {
+    const res = await fetch(`version.json?t=${Date.now()}`, { cache: 'no-store' });
+    const { version } = await res.json();
+    if (window.MUSEUM_VERSION && version !== window.MUSEUM_VERSION) $('update-banner').classList.remove('hidden');
+  } catch {}
+}, 3 * 60 * 1000);
+$('update-reload').addEventListener('click', () => location.reload());
+
+// In admin mode, choosing an exhibit opens its editor instead of the visitor's info panel.
+const admin = new Admin(MUSEUM.admin ?? {});
+$('admin-btn').addEventListener('click', () => admin.open());
 
 function openPanel(exhibit, room) {
+  if (admin.active && exhibit.id) {
+    panelOpen = true;
+    ui.prompt.classList.add('hidden');
+    promptFor = null;
+    resetJoystick();
+    if (mode === 'desktop') controls.unlock();
+    admin.edit(exhibit, room, () => {
+      panelOpen = false;
+      if (mode === 'desktop') controls.lock();
+    });
+    return;
+  }
   panelOpen = true;
   $('info-room').textContent = room.name;
   $('info-title').textContent = exhibit.title || 'Exhibit coming soon';
@@ -3149,6 +3288,7 @@ function closePanel() {
 $('info-close').addEventListener('click', closePanel);
 
 document.addEventListener('keydown', (e) => {
+  if (admin.editorOpen || e.target.closest?.('input, textarea')) return;
   if (panelOpen) {
     if (e.code === 'KeyE' || e.code === 'Escape') closePanel();
     return;
@@ -3158,6 +3298,10 @@ document.addEventListener('keydown', (e) => {
   if (!controls.isLocked) return;
   if (e.code === 'KeyE' && focused) openPanel(focused.userData.exhibit, focused.userData.room);
   if (e.code === 'KeyM') ui.minimap.classList.toggle('hidden');
+  if (e.code === 'Space') {
+    e.preventDefault();
+    jump();
+  }
   const n = Number(e.key);
   if (n >= 1 && n <= VISIT_ROOMS.length) teleportTo(VISIT_ROOMS[n - 1]);
 });
