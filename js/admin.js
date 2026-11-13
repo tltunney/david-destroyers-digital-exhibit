@@ -26,14 +26,14 @@ async function passwordKey(password, salt, rounds) {
   const base = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
   return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: rounds, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
 }
-export async function lockToken(token, password) {
+async function lockToken(token, password) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const key = await passwordKey(password, salt, PBKDF2_ROUNDS);
   const data = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(token)));
   return { version: 1, kdf: 'PBKDF2-SHA256', rounds: PBKDF2_ROUNDS, salt: toBase64(salt), iv: toBase64(iv), token: toBase64(data) };
 }
-export async function unlockToken(box, password) {
+async function unlockToken(box, password) {
   const key = await passwordKey(password, fromBase64(box.salt), box.rounds);
   const data = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromBase64(box.iv) }, key, fromBase64(box.token));
   return dec.decode(data); // throws if the password is wrong

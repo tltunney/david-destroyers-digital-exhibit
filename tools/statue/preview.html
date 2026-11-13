@@ -13,11 +13,12 @@
 </head>
 <body>
   <!-- Preview of assets/models/copperfield.glb. Add #angle=0.6&zoom=1&y=0.95 to the URL to turn the view,
-       &cy=0.6 to set the camera height, and &model=path/to/other.glb to look at a different file. -->
+       &cy=0.6 to set the camera height, &ao=0 to hide the baked occlusion, and &model=path/to/other.glb to look at a different file. -->
   <script type="module">
     import * as THREE from 'three';
     import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+    import { MeshoptDecoder } from '../../lib/three/examples/jsm/libs/meshopt_decoder.module.js';
 
     const params = new URLSearchParams(location.hash.slice(1));
     const angle = Number(params.get('angle') ?? 0.35);
@@ -48,11 +49,15 @@
     camera.position.set(Math.sin(angle) * dist, eyeY, Math.cos(angle) * dist);
     camera.lookAt(0, focusY, 0);
 
-    new GLTFLoader().load(params.get('model') ?? '../../assets/models/copperfield.glb', (gltf) => {
+    const loader = new GLTFLoader();
+    loader.setMeshoptDecoder(MeshoptDecoder); // the statue's buffers use EXT_meshopt_compression
+    loader.load(params.get('model') ?? '../../assets/models/copperfield.glb', (gltf) => {
       gltf.scene.traverse((m) => {
         if (m.isMesh) {
           m.castShadow = m.receiveShadow = true;
-          m.material = new THREE.MeshStandardMaterial({ color: 0xefebe4, roughness: 0.35 });
+          // COLOR_0 holds ambient occlusion baked from the distance field (&ao=0 to switch it off)
+          const ao = !!m.geometry.attributes.color && params.get('ao') !== '0';
+          m.material = new THREE.MeshStandardMaterial({ color: 0xefebe4, roughness: 0.35, vertexColors: ao });
         }
       });
       scene.add(gltf.scene);

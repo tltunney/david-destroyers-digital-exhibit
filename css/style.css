@@ -221,8 +221,6 @@ kbd {
 #info-image { display: block; max-width: 100%; max-height: 45vh; margin: 0 auto 16px; border-radius: 6px; }
 #info-image:not([src]), #info-image[src=""] { display: none; }
 #info-body p { line-height: 1.6; }
-#info-link { display: inline-block; margin-top: 8px; color: #c9a24a; }
-#info-link:empty { display: none; }
 .hint { margin: 20px 0 0; font-size: 0.8rem; color: var(--muted); }
 
 /* ---------- Phone / tablet mode ---------- */

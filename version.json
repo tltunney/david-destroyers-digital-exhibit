@@ -1,1 +1,25 @@
-{ "version": "2026-11-12.1" }
+{
+  "version": "20261112.232938",
+  "modules": [
+    "admin.js",
+    "ao.js",
+    "app.js",
+    "art.js",
+    "batching.js",
+    "config.js",
+    "engine.js",
+    "exhibits.js",
+    "furniture.js",
+    "main.js",
+    "materials.js",
+    "music.js",
+    "player.js",
+    "reflections.js",
+    "rooms.js",
+    "rotunda.js",
+    "textures.js",
+    "ui.js",
+    "util.js",
+    "world.js"
+  ]
+}

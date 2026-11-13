@@ -1,0 +1,9 @@
+{
+  "name": "statue-tools",
+  "private": true,
+  "type": "module",
+  "description": "Builds assets/models/copperfield.glb (run: node make-statue.mjs)",
+  "dependencies": {
+    "meshoptimizer": "^0.22.0"
+  }
+}

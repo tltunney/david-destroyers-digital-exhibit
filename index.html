@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>David Destroyers Digital Exhibit</title>
   <link rel="icon" href="data:," />
-  <link rel="stylesheet" href="css/style.css?v=3" />
+  <link rel="stylesheet" href="css/style.css?v=4" />
 </head>
 <body>
   <div id="app"></div>
@@ -72,36 +72,33 @@
       <p id="info-subtitle"></p>
       <img id="info-image" alt="" />
       <div id="info-body"></div>
-      <a id="info-link" target="_blank" rel="noopener"></a>
       <p class="hint"><span class="desktop-only">Press <kbd>E</kbd> or <kbd>Esc</kbd> to return to the museum</span><span class="touch-only">Tap &times; to return to the museum</span></p>
     </div>
   </div>
 
   <!--
-    Always run the newest code: version.json is fetched fresh, and its number is added to every
-    one of our script files, so a browser can never mix in an old cached copy. Bump version.json
-    whenever the code changes.
+    Always run the newest code: version.json is fetched fresh, and its version number is added to
+    every one of our script files (listed in version.json), so a browser can never mix in an old
+    cached copy. Run `node tools/release.mjs` whenever the code changes.
   -->
   <script>
     (async () => {
-      let version = Date.now().toString(36);
+      let release = { version: Date.now().toString(36), modules: ['app.js'] };
       try {
         const res = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
-        if (res.ok) version = (await res.json()).version;
+        if (res.ok) release = await res.json();
       } catch {}
-      window.MUSEUM_VERSION = version;
+      window.MUSEUM_VERSION = release.version;
       const imports = { three: './lib/three/build/three.module.js', 'three/addons/': './lib/three/examples/jsm/' };
-      for (const name of ['main', 'config', 'textures', 'music', 'admin']) {
-        imports[new URL('js/' + name + '.js', location.href).href] = './js/' + name + '.js?v=' + version;
-      }
+      for (const file of release.modules) imports[new URL('js/' + file, location.href).href] = './js/' + file + '?v=' + release.version;
       const map = document.createElement('script');
       map.type = 'importmap';
       map.textContent = JSON.stringify({ imports });
       document.head.append(map);
-      const main = document.createElement('script');
-      main.type = 'module';
-      main.src = 'js/main.js?v=' + version;
-      document.body.append(main);
+      const app = document.createElement('script');
+      app.type = 'module';
+      app.src = 'js/app.js?v=' + release.version;
+      document.body.append(app);
     })();
   </script>
 </body>

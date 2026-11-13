@@ -1,12 +1,11 @@
-// Procedural surface textures, generated once when the page loads.
-// Each surface gets three maps:
+// Surface textures: the wood floor is photographed (assets/textures); the rest are generated once
+// when the page loads. Each surface gets three maps:
 //   map           the color
 //   normalMap     tiny bumps and grooves, so light catches the grain and seams
 //   roughnessMap  where the surface is shiny (polished) or matte
 // All of them tile seamlessly.
 import * as THREE from 'three';
-
-const SMALL = window.matchMedia('(pointer: coarse)').matches; // phones/tablets get lighter textures
+import { SMALL_SCREEN as SMALL } from './engine.js'; // phones/tablets get lighter textures
 
 function random(seed) {
   let s = seed >>> 0;
@@ -124,55 +123,6 @@ const clamp255 = (v) => Math.max(0, Math.min(255, v));
 const tint = ([r, g, b], k) => [clamp255(r * k), clamp255(g * k), clamp255(b * k)];
 
 // ---------------------------------------------------------------- surfaces
-
-// Lacquered plank floor. One tile = 2 m × 2 m: 11 rows of long boards with staggered end joints.
-function woodFloor(color) {
-  const size = SMALL ? 512 : 1024;
-  const base = rgb(color);
-  const rows = 11;
-  const r = random(11);
-  const rowOffset = Array.from({ length: rows }, () => r());
-  const boardTone = Array.from({ length: rows }, () => 0.84 + r() * 0.3);
-  const boardShift = Array.from({ length: rows }, () => r() * 50);
-  const grain = fractal(21, 3, 60, 4);
-  const fine = fractal(31, 64, 64, 2);
-  const groovePx = size / 512;
-  return surface(size, size, (u, v) => {
-    const row = Math.floor(v * rows);
-    const fy = v * rows - row;
-    const fx = (u + rowOffset[row]) % 1; // one 2 m board per row, joints staggered
-    const board = row;
-    const g = grain(u, v + boardShift[board] / 60);
-    const figure = Math.sin((fy * 2.5 + g * 7 + boardShift[board]) * Math.PI * 2) * 0.5 + 0.5;
-    const edge = Math.min(Math.min(fy, 1 - fy) * (size / rows), Math.min(fx, 1 - fx) * size);
-    if (edge < groovePx) return [...tint(base, 0.68), 0, 0.9];
-    const bevel = Math.min(1, edge / (groovePx * 3));
-    const streak = Math.pow(figure, 3);
-    const k = boardTone[board] * (0.8 + g * 0.32 - streak * 0.1 + (fine(u, v) - 0.5) * 0.06);
-    const c = tint(base, k * (0.9 + bevel * 0.1));
-    c[2] = clamp255(c[2] - streak * 10); // darker grain lines are warmer
-    return [...c, 0.6 + bevel * 0.4 + g * 0.05, 0.3 + g * 0.2];
-  }, 3);
-}
-
-// Sealed, polished concrete. One tile = 4 m × 4 m with a saw-cut joint at the edge.
-function concrete(color) {
-  const size = SMALL ? 512 : 1024;
-  const base = rgb(color);
-  const cloud = fractal(41, 3, 3, 5);
-  const fine = fractal(51, 96, 96, 2);
-  const speck = tileNoise(61, 400, 400);
-  return surface(size, size, (u, v, x, y) => {
-    if (x < 2 || y < 2) return [...tint(base, 0.72), 0, 0.8];
-    const c = cloud(u, v);
-    const f = fine(u, v);
-    const s = speck(u * 400, v * 400);
-    let k = 0.9 + c * 0.18 + (f - 0.5) * 0.06;
-    if (s > 0.86) k *= 0.88;
-    else if (s < 0.1) k *= 1.06;
-    return [...tint(base, k), 0.5 + f * 0.08, 0.22 + c * 0.38];
-  }, 1.5);
-}
 
 // Painted plaster wall: almost flat, with a faint orange-peel texture. One tile = 2 m.
 function plaster(color) {
@@ -342,7 +292,7 @@ function tufted(color) {
   }, 4);
 }
 
-const GENERATORS = { wood: woodFloor, concrete, plaster, slats, marble, leather, damask, wainscot, tufted };
+const GENERATORS = { plaster, slats, marble, leather, damask, wainscot, tufted };
 
 // Photographed surfaces (assets/textures). The photo has one natural color; each room's color is
 // reached by tinting it, so `avg` is the photo's average color. Phones load half-size copies.
@@ -413,11 +363,10 @@ export function surfaceMaps(kind, color, repeatX = 1, repeatY = 1) {
 
 // How big one texture tile is in meters, so surfaces line up with real-world scale.
 export const TILE_SIZE = {
-  wood: [2.24, 1.12], concrete: [4, 4], plaster: [2, 2], slats: [1, 2.5], marble: [1, 1], leather: [0.5, 0.5],
+  wood: [2.24, 1.12], plaster: [2, 2], slats: [1, 2.5], marble: [1, 1], leather: [0.5, 0.5],
   damask: [0.7, 0.7], wainscot: [1, 1.1], tufted: [0.5, 0.5],
 };
 
-export const SMALL_SCREEN = SMALL;
 
 // A generated surface's color as a canvas (to paint it into other textures, like the rotunda floor).
 export function surfaceCanvas(kind, color) {
